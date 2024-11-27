@@ -1,4 +1,5 @@
 from POP import PromptFunction, load_prompt, get_text_snapshot
+import argparse
 import json
 import csv
 
@@ -61,92 +62,100 @@ content_response_format = {
         }
     }
 
-url = "www.bbc.com/news/articles"
-user_request = "I'm looking for world news articles of different countries."
+def main(args):
+    url = args.input
+    user_request = args.request
+    output_file = args.output
+    categories = content_finder.execute(get_text_snapshot(url, links_at_end=True), 
+                                                USE_MODEL="gpt-4o", 
+                                                ADD_BEFORE = user_request,
+                                                RESPONSE_FORMAT=category_response_format)
+    categories = json.loads(categories).get("categories", {})
 
+    titles_and_urls = {}
+    send_full_snapshot = False
+    for category, category_url in categories.items():
+        print(f"{category}: {category_url}")
+        next_page = category_url
+        page = 0
 
-categories = content_finder.execute(get_text_snapshot(url, links_at_end=True), 
-                                            USE_MODEL="gpt-4o", 
-                                            ADD_BEFORE = user_request,
-                                            RESPONSE_FORMAT=category_response_format)
-categories = json.loads(categories).get("categories", {})
+        while next_page:
+            page += 1
+            print(f"[Page: {page}]")
+            snapshot = get_text_snapshot(next_page, links_at_end=True)
+            snapshot_links = snapshot[snapshot.find("Links/Buttons:"):]
 
-titles_and_urls = {}
-send_full_snapshot = False
-for category, category_url in categories.items():
-    print(f"{category}: {category_url}")
-    next_page = category_url
-    page = 0
+            titles = get_title_and_url.execute(snapshot_links, 
+                                ADD_BEFORE = f"I'm looking for news articles on {category}, please provide me with the title and URL of the articles.",
+                                USE_MODEL="gpt-4o-mini",
+                                RESPONSE_FORMAT=title_response_format)
+            
+            next_page = json.loads(titles).get("next_page", "")
+            titles = json.loads(titles).get("titles_and_urls", []) # this is a list
 
-    while next_page:
-        page += 1
-        print(f"[Page: {page}]")
-        snapshot = get_text_snapshot(next_page, links_at_end=True)
-        snapshot_links = snapshot[snapshot.find("Links/Buttons:"):]
+            if not titles and not send_full_snapshot:
+                print("Empty content. Setting send_full_snapshot to True and retrying...")
+                send_full_snapshot = True
+                page -= 1
+                continue
 
-        titles = get_title_and_url.execute(snapshot_links, 
-                            ADD_BEFORE = f"I'm looking for news articles on {category}, please provide me with the title and URL of the articles.",
-                            USE_MODEL="gpt-4o-mini",
-                            RESPONSE_FORMAT=title_response_format)
+            for title_and_url in titles:
+                title = title_and_url.get('title', "")
+                url = title_and_url.get('url', "")
+                titles_and_urls[title] = (url, category)
+                print(f"{title}: {titles_and_urls[title]}")
+
+    contents = {}
+    for title, (url, category) in titles_and_urls.items():
+        print(f"Title: {title}")
+        print(f"Category: {category}")
+        print(f"URL: {url}")
+
+        next_page = url
+        content = ""
+        author = ""
+        while next_page:
+            response = get_content.execute(next_page, 
+                                ADD_BEFORE = f"I'm looking for the content of the article '{title}'.",
+                                USE_MODEL="gpt-4o-mini",
+                                RESPONSE_FORMAT=content_response_format)
+            next_page = json.loads(response).get("next_page", "")
+            author = json.loads(response).get("author", "") if not author else author
+            content = content + json.loads(response).get("content", "")
+
+        contents[title] = {"title": title,
+                        "category": category, 
+                        "author": author, 
+                        "content": content,
+                        "url": "url"}
         
-        next_page = json.loads(titles).get("next_page", "")
-        titles = json.loads(titles).get("titles_and_urls", []) # this is a list
+    contents_list = [
+        {
+            'title': title,
+            'author': details.get('author', ''),
+            'content': details.get('content', ''),
+            'category': details.get('category', ''),
+            'url': details.get('url', '')
+        }
+        for title, details in contents.items()
+    ]
 
-        if not titles and not send_full_snapshot:
-            print("Empty content. Setting send_full_snapshot to True and retrying...")
-            send_full_snapshot = True
-            page -= 1
-            continue
-
-        for title_and_url in titles:
-            title = title_and_url.get('title', "")
-            url = title_and_url.get('url', "")
-            titles_and_urls[title] = (url, category)
-            print(f"{title}: {titles_and_urls[title]}")
-
-contents = {}
-for title, (url, category) in titles_and_urls.items():
-    print(f"Title: {title}")
-    print(f"Category: {category}")
-    print(f"URL: {url}")
-
-    next_page = url
-    content = ""
-    author = ""
-    while next_page:
-        response = get_content.execute(next_page, 
-                            ADD_BEFORE = f"I'm looking for the content of the article '{title}'.",
-                            USE_MODEL="gpt-4o-mini",
-                            RESPONSE_FORMAT=content_response_format)
-        next_page = json.loads(response).get("next_page", "")
-        author = json.loads(response).get("author", "") if not author else author
-        content = content + json.loads(response).get("content", "")
-
-    contents[title] = {"title": title,
-                       "category": category, 
-                       "author": author, 
-                       "content": content,
-                       "url": "url"}
-    
-contents_list = [
-    {
-        'title': title,
-        'author': details.get('author', ''),
-        'content': details.get('content', ''),
-        'category': details.get('category', ''),
-        'url': details.get('url', '')
-    }
-    for title, details in contents.items()
-]
-
-with open("results.csv", 'w', newline='') as file:
-    fieldnames = ['title', 'author', 'content', 'category', 'url']
-    writer = csv.DictWriter(file, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(contents_list)
+    with open(output_file, 'w', newline='') as file:
+        fieldnames = ['title', 'author', 'content', 'category', 'url']
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(contents_list)
 
 
     
         
 
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Crawl stories from a website')
+    parser.add_argument('-i', '--input', type=str, help='Input an url of the website to be crawled.')
+    parser.add_argument('-o', '--output', type=str, help='Output file to save the crawled stories.')
+    parser.add_argument('-r', '--request', type=str, help='User request to be added before the prompt.')
+    args = parser.parse_args()
+
+    main(args)
