@@ -36,11 +36,12 @@ class PromptFunction:
         use_model = kwargs.pop("USE_MODEL", "gpt-4o-mini")
         system_instruction = kwargs.pop("SYSTEM_INSTRUCTION", None)
         response_format = kwargs.pop("RESPONSE_FORMAT", None)
+        stream = kwargs.pop("STREAM", False)
         # Step 1: Inject user arguments into the prompt
         prompt = self._prepare_prompt(*args, **kwargs)
 
         # Step 2: Call AI with the prepared prompt
-        return self._call_ai(prompt, use_model=use_model, system_instruction=system_instruction, response_format=response_format)
+        return self._call_ai(prompt, use_model=use_model, system_instruction=system_instruction, response_format=response_format, stream=stream)
 
     def _prepare_prompt(self, *args, **kwargs) -> str:
         """
@@ -73,7 +74,7 @@ class PromptFunction:
 
         return prompt
     
-    def _call_ai(self, formatted_prompt: str = None, use_model: str = "gpt-4o-mini", response_format: dict = None, system_instruction = None) -> Any:
+    def _call_ai(self, formatted_prompt: str = None, use_model: str = "gpt-4o-mini", response_format: dict = None, system_instruction = None, stream = False) -> Any:
         """
         Internal method to call OpenAI API using the chat completion API.
 
@@ -93,7 +94,8 @@ class PromptFunction:
                 {"role": "system", "content": f"You are a helpful assistant that perform tasks user asked to. Here's addition instruction if any: \n{system_instruction}"},
                 {"role": "user", "content": formatted_prompt}
             ],
-            "temperature": self.temperature
+            "temperature": self.temperature,
+            "stream": stream
         }
 
         if response_format:
@@ -103,7 +105,10 @@ class PromptFunction:
             }
 
         response = client.chat.completions.create(**request_payload)
-        return response.choices[0].message.content
+        if stream:
+            return self._stream_response(response)
+        else:
+            return response.choices[0].message.content
     
     def _improve_prompt(self, replace = False, use_prompt = "fabric", instruction = None, system_instruction = None) -> str:
         """
@@ -137,6 +142,28 @@ class PromptFunction:
             self.prompt = improved_prompt
         else:
             return improved_prompt
+
+    def _stream_response(self, response) -> Any:
+        """
+        Process and yield streamed response chunks from the OpenAI API.
+
+        Args:
+            response: The API response object with streaming enabled.
+
+        Yields:
+            str: The content of each chunk as it arrives.
+        """
+        for chunk in response:
+            try:
+                token = chunk.choices[0].delta.content
+            except:
+                token = None
+
+            if token is None:
+                continue
+                
+            print(chunk.choices[0].delta.content, end="")
+        
         
     def set_temperature(self, temperature: float) -> None:
         """
