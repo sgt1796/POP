@@ -73,6 +73,7 @@ def main(args):
     categories = json.loads(categories).get("categories", {})
 
     titles_and_urls = {}
+    error_log = []
     send_full_snapshot = False
     for category, category_url in categories.items():
         print(f"{category}: {category_url}")
@@ -86,12 +87,16 @@ def main(args):
             snapshot_links = snapshot[snapshot.find("Links/Buttons:"):]
 
             titles = get_title_and_url.execute(snapshot_links, 
-                                ADD_BEFORE = f"I'm looking for news articles on {category}, please provide me with the title and URL of the articles.",
+                                ADD_BEFORE = f"I'm looking for articles on {category}, please provide me with the title and URL of the articles.",
                                 USE_MODEL="gpt-4o-mini",
                                 RESPONSE_FORMAT=title_response_format)
-            
-            next_page = json.loads(titles).get("next_page", "")
-            titles = json.loads(titles).get("titles_and_urls", []) # this is a list
+            try:
+                next_page = json.loads(titles).get("next_page", "")
+                titles = json.loads(titles).get("titles_and_urls", []) # this is a list
+            except Exception as e: # if error crawling skip the content and log
+                next_page = ""
+                titles = [] 
+                error_log.append({"step":"title_and_url", "message": e, "response": response})
 
             if not titles and not send_full_snapshot:
                 print("Empty content. Setting send_full_snapshot to True and retrying...")
@@ -119,15 +124,20 @@ def main(args):
                                 ADD_BEFORE = f"I'm looking for the content of the article '{title}'.",
                                 USE_MODEL="gpt-4o-mini",
                                 RESPONSE_FORMAT=content_response_format)
-            next_page = json.loads(response).get("next_page", "")
-            author = json.loads(response).get("author", "") if not author else author
-            content = content + json.loads(response).get("content", "")
-
+            try:
+                next_page = json.loads(response).get("next_page", "")
+                author = json.loads(response).get("author", "") if not author else author
+                content = content + json.loads(response).get("content", "")
+            except Exception as e:
+                next_page = ""
+                author = ""
+                content = ""
+                error_log.append({"step":"content", "message": e, "response":response})
         contents[title] = {"title": title,
                         "category": category, 
                         "author": author, 
                         "content": content,
-                        "url": "url"}
+                        "url": url}
         
     contents_list = [
         {
@@ -139,16 +149,20 @@ def main(args):
         }
         for title, details in contents.items()
     ]
+    print("crawling complete!")
 
     with open(output_file, 'w', newline='') as file:
+        print("saving data...")
         fieldnames = ['title', 'author', 'content', 'category', 'url']
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(contents_list)
 
-
-    
-        
+    with open("error_log.txt", "w") as file:
+        print("saving error logs...")
+        for error in error_log:
+            file.write(json.dumps(error), "\n") 
+    print("Done!")
 
 
 if __name__ == '__main__':
