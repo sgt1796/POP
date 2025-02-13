@@ -2,9 +2,7 @@ import openai
 import requests
 from dotenv import load_dotenv
 from os import getenv
-import re
-from pydantic import BaseModel
-
+from typing import Any 
 
 ## A class representing a reusable prompt function executed via GPT API (except jina reader API for get_text_snapshot).
 
@@ -14,7 +12,7 @@ class PromptFunction:
     """
     A class representing a reusable prompt function in POP.
     """
-    def __init__(self, prompt: str = ""):
+    def __init__(self, prompt: str):
         """
         Initializes a new prompt function with a prompt template.
         
@@ -35,16 +33,14 @@ class PromptFunction:
         Returns:
             str: The AI-generated response.
         """
-        model = kwargs.pop("model", "gpt-4o-mini")
-        sys = kwargs.pop("sys", None)
-        fmt = kwargs.pop("fmt", None)
-        temp = kwargs.pop("temp", self.temperature)
-
+        use_model = kwargs.pop("USE_MODEL", "gpt-4o-mini")
+        system_instruction = kwargs.pop("SYSTEM_INSTRUCTION", None)
+        response_format = kwargs.pop("RESPONSE_FORMAT", None)
         # Step 1: Inject user arguments into the prompt
         prompt = self._prepare_prompt(*args, **kwargs)
 
         # Step 2: Call AI with the prepared prompt
-        return self._call_ai(prompt, model=model, sys=sys, fmt=fmt, temp=temp)
+        return self._call_ai(prompt, use_model=use_model, system_instruction=system_instruction, response_format=response_format)
 
     def _prepare_prompt(self, *args, **kwargs) -> str:
         """
@@ -61,11 +57,11 @@ class PromptFunction:
         before = kwargs.pop("ADD_BEFORE", None)
         after = kwargs.pop("ADD_AFTER", None)
         
+
         prompt = self.prompt
         ## If a placeholder is provided, replace it with the value
         for key, value in kwargs.items():
-            # Changed from using curly brackets {} to triple angle brackets <<<
-            prompt = prompt.replace(f"<<<{key}>>>", str(value))
+            prompt = prompt.replace(f"{{{key}}}", str(value))
 
         # Add "before" text if provided
         prompt = f"{before}\n{prompt}" if before else prompt
@@ -77,39 +73,37 @@ class PromptFunction:
 
         return prompt
     
-    def _call_ai(self, formatted_prompt: str, model: str, sys: str, fmt: dict, temp: float) -> str:
+    def _call_ai(self, formatted_prompt: str = None, use_model: str = "gpt-4o-mini", response_format: dict = None, system_instruction = None) -> Any:
         """
         Internal method to call OpenAI API using the chat completion API.
 
         Args:
             formatted_prompt (str): The prepared prompt for execution.
-            model (str): The model name to use.
-            sys (str): System instructions.
-            fmt (dict): Response format/schema.
-            temp (float): Sampling temperature.
-
+        
         Returns:
-            str: The raw response content.
+            Any: The API response.
         """
-        sys = "" if sys is None else sys
+        if not formatted_prompt:
+            formatted_prompt = self.prompt
+        system_instruction = "" if system_instruction is None else system_instruction
+        # Define request payload
         request_payload = {
-            "model": model,
+            "model": use_model,
             "messages": [
-                {"role": "system", "content": f"You are a helpful assistant. Additional instruction:\n{sys}\n"},
+                {"role": "system", "content": f"You are a helpful assistant that perform tasks user asked to. Here's addition instruction if any: \n{system_instruction}"},
                 {"role": "user", "content": formatted_prompt}
             ],
-            "temperature": temp
+            "temperature": self.temperature
         }
 
-        if fmt:
-            if isinstance(fmt, BaseModel):
-                request_payload["response_format"] = fmt
-            else:
-                request_payload["response_format"] = {"type": "json_schema", "json_schema": fmt}
+        if response_format:
+            request_payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": response_format
+            }
 
         response = client.chat.completions.create(**request_payload)
         return response.choices[0].message.content
-
     
     def _improve_prompt(self, replace = False, use_prompt = "fabric", instruction = None, system_instruction = None) -> str:
         """
@@ -133,9 +127,9 @@ class PromptFunction:
         
         # use instruction to improve prompt
         instruction = "" if instruction is None else instruction
-        improved_prompt = self.execute(ADD_BEFORE=f"\naddition instruction:\n{instruction} \nyou must preserve the original placeholder (the placeholder is of the format <<<placeholder>>>) in the improved prompt if there is one.\n\n"+instruction,
-                                       model="gpt-4o", 
-                                       sys = system_instruction)
+        improved_prompt = self.execute(ADD_BEFORE=f"\naddition instruction:\n{instruction} \nyou must preserve the original placeholder in the improved prompt if there is one.\n\n"+instruction,
+                                       USE_MODEL="gpt-4o", 
+                                       SYSTEM_INSTRUCTION = system_instruction)
         
         improved_prompt = improved_prompt.split("# OUTPUT\n\n")[-1] if use_prompt == "fabric" else improved_prompt
 

@@ -510,7 +510,7 @@ END PROMPT WRITING KNOWLEDGE
 
 # OUTPUT INSTRUCTIONS:
 
-1. Output the prompt in clean, human-readable Markdown format.
+1. Format the prompt using standard Markdown syntax where applicable (e.g., for headings or lists), but do not enclose the entire prompt in a code block.
 2. Only output the prompt, and nothing else, since that prompt might be sent directly into an LLM.
 
 # INPUT
