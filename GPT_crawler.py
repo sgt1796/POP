@@ -67,9 +67,9 @@ def main(args):
     user_request = args.request
     output_file = args.output
     categories = content_finder.execute(get_text_snapshot(url, links_at_end=True), 
-                                                USE_MODEL="gpt-4o", 
+                                                model="gpt-4o", 
                                                 ADD_BEFORE = user_request,
-                                                RESPONSE_FORMAT=category_response_format)
+                                                fmt=category_response_format)
     categories = json.loads(categories).get("categories", {})
 
     titles_and_urls = {}

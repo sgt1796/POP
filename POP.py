@@ -14,7 +14,7 @@ class PromptFunction:
     """
     A class representing a reusable prompt function in POP.
     """
-    def __init__(self, prompt: str = ""):
+    def __init__(self, prompt: str = "", sys_prompt: str | None = None):
         """
         Initializes a new prompt function with a prompt template.
         
@@ -23,6 +23,7 @@ class PromptFunction:
         """
         self.prompt = prompt
         self.temperature = 0.7
+        self.sys_prompt = sys_prompt
 
     def execute(self, *args, **kwargs) -> str:
         """
@@ -95,7 +96,7 @@ class PromptFunction:
         request_payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": f"You are a helpful assistant. Additional instruction:\n{sys}\n"},
+                {"role": "system", "content": f"You are a General-purposed helpful assistant unless otherwise instructed. User's prompt for system:\n{self.sys_prompt}\n\nAdditional instruction:\n{sys}\n"},
                 {"role": "user", "content": formatted_prompt}
             ],
             "temperature": temp
@@ -106,7 +107,7 @@ class PromptFunction:
                 request_payload["response_format"] = fmt
             else:
                 request_payload["response_format"] = {"type": "json_schema", "json_schema": fmt}
-
+            
         response = client.chat.completions.create(**request_payload)
         return response.choices[0].message.content
 
