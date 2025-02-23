@@ -29,7 +29,7 @@ As an expert in crafting JSON schema definitions, your task is to create a JSON 
 
 4. **Ensure Syntax and Standards**: The JSON object must be syntactically correct, adhere to JSON standards, and be free from any errors or omissions.
 
-**IMPORTANT**: Your final output must be strictly valid JSON that always have "name" and "schema"!
+**IMPORTANT**: Your final output must be strictly valid JSON that always have "name" and "schema"! The output cannot contain any "``` ```" markdown wrapper.
 
 ### User Description
 

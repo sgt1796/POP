@@ -14,16 +14,21 @@ class PromptFunction:
     """
     A class representing a reusable prompt function in POP.
     """
-    def __init__(self, prompt: str = "", sys_prompt: str | None = None):
+    def __init__(self, sys_prompt: str = "", prompt = None):
         """
         Initializes a new prompt function with a prompt template.
-        
+        **Updates: 
+        1. Role of the default (without kwargs) prompt given while the pf creation will be set to "system" instead of "user".
+        2. pf.execute("somthing to say") --> "somthing to say" will go to user's prompt.
+
         Args:
             prompt (str): The base prompt template for the function.
+            sys_prompt (str): The system prompt for the function.
         """
-        self.prompt = prompt
+        self.prompt = prompt if prompt else ""
         self.temperature = 0.7
         self.sys_prompt = sys_prompt
+        self.placeholders = self._get_place_holder()
 
     def execute(self, *args, **kwargs) -> str:
         """
@@ -49,34 +54,54 @@ class PromptFunction:
 
     def _prepare_prompt(self, *args, **kwargs) -> str:
         """
-        Prepares the prompt by dynamically injecting arguments.
+        Prepares the prompt by dynamically injecting arguments into the existing placeholders.
+        This version explicitly uses the self.placeholders list.
 
         Args:
-            *args: Positional arguments to add to the prompt.
-            **kwargs: Key-value arguments for placeholder replacement or context.
+            *args: Positional arguments to be appended to the prompt.
+            **kwargs: Keyword arguments for replacing placeholders or adding context. 
+                    Special keys include "ADD_BEFORE" and "ADD_AFTER" for prepending or appending text.
 
         Returns:
-            str: The modified prompt ready for execution.
+            str: The fully formatted prompt.
         """
-        # Default injection modes: Before, After, or Inject placeholders
+        # Extract special injection modes (if provided)
         before = kwargs.pop("ADD_BEFORE", None)
         after = kwargs.pop("ADD_AFTER", None)
         
+        # Start with the base prompt
         prompt = self.prompt
-        ## If a placeholder is provided, replace it with the value
-        for key, value in kwargs.items():
-            # Changed from using curly brackets {} to triple angle brackets <<<
-            prompt = prompt.replace(f"<<<{key}>>>", str(value))
+        # If the prompt is empty, no kwargs provided, but the system prompt is not, use the positional argument as the prompt
+        if not prompt and not kwargs and self.sys_prompt:
+            # join them with a newline character
+            prompt = f"{prompt}\n" + "\n".join(args)
+        # If the prompt is empty, with kwargs and sys_prompt both provided, will print the kwargs dict as the user's prompt
+        elif not prompt and kwargs and self.sys_prompt:
+            prompt = f"{prompt}\n" + "\n".join([f"{k}: {v}" for k, v in kwargs.items()])
 
-        # Add "before" text if provided
-        prompt = f"{before}\n{prompt}" if before else prompt
-        # Add "after" text if provided
-        prompt = f"{prompt}\n{after}" if after else prompt
-        # Append positional arguments to the end
+        # First pass: Replace only placeholders that exist in self.placeholders
+        for placeholder in self.placeholders:
+            if placeholder in kwargs:
+                prompt = prompt.replace(f"<<<{placeholder}>>>", str(kwargs.pop(placeholder)))
+            # Optionally: else warn or leave the placeholder as is
+
+        # Second pass: For any remaining kwargs, attempt replacement 
+        # (useful if there are dynamic replacements not originally detected)
+        for key, value in kwargs.items():
+            prompt = prompt.replace(f"<<<{key}>>>", str(value))
+        
+        # Prepend and append any additional text if provided
+        if before:
+            prompt = f"{before}\n{prompt}"
+        if after:
+            prompt = f"{prompt}\n{after}"
+        
+        # Append any positional arguments at the end of the prompt
         if args:
             prompt = f"{prompt}\n" + "\n".join(args)
 
         return prompt
+
     
     def _call_ai(self, formatted_prompt: str, model: str, sys: str, fmt: dict, temp: float) -> str:
         """
@@ -107,6 +132,12 @@ class PromptFunction:
                 request_payload["response_format"] = fmt
             else:
                 request_payload["response_format"] = {"type": "json_schema", "json_schema": fmt}
+        
+        ## Currently the o1-mini model not support the sys role, So if the model is o1-mini, we change the sys prompt to user prompt.
+        # this is a temporary solution -----
+        if model == 'o1-mini':
+            request_payload["messages"][0]["role"] = "user"
+
             
         response = client.chat.completions.create(**request_payload)
         return response.choices[0].message.content
@@ -163,6 +194,38 @@ class PromptFunction:
         """
         with open(file_path, "w") as file:
             file.write(self.prompt)
+
+    def _get_place_holder(self):
+        """
+        Get all the placeholders in the prompt. 
+
+        Returns:
+            list: A list of all the placeholders in the prompt.
+        """
+        if not self.prompt:
+            print("No prompt found. Checking sys_prompt...")
+            if not self.sys_prompt:
+                print("No system prompt found. Please provide a prompt.")
+                return []
+            else:
+                result = re.findall(r"<<<(.*?)>>>", self.sys_prompt)
+                if not result:
+                    print("No placeholders found in the system prompt.")
+                    return []
+              
+                print("Placeholders:", '\n'.join(result))
+                    
+                return result
+        result = re.findall(r"<<<(.*?)>>>", self.prompt)
+        if not result:
+            print("No placeholders found in the prompt.")
+            return []
+        print("Placeholders:", '\n'.join(result))
+        return result
+    
+    def _load_prompt(file):
+        with open(file, 'r') as f:
+            return f.read()
 
 def load_prompt(file):
         with open(file, 'r') as f:
