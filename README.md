@@ -2,6 +2,7 @@
 
 **Reusable, mutable prompt functions for LLMs.** Inspired by object-oriented programming (OOP), POP treats prompts as first-class citizens—defining them like functions with inputs, outputs, and reusable logic. Execution is delegated to a language model (LLM), such as OpenAI’s GPT, enabling you to call, modify, and reuse prompts in a structured, programmatic way.
 
+**PyPI Link:** <https://pypi.org/project/POP-guotai/>
 ---
 
 ## Table of Contents

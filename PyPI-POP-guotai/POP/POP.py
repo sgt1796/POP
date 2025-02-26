@@ -167,14 +167,16 @@ class PromptFunction:
         # Start with the base prompt. If empty, fallback to sys_prompt or join args.
         prompt = self.prompt
         if not prompt:
-            if self.sys_prompt:
-                prompt = self.sys_prompt
-            if args:
-                prompt += "\n" + "\n".join(args)
-            elif kwargs:
-                prompt += "\n" + "\n".join(f"{k}: {v}" for k, v in kwargs.items())
+            if self.sys_prompt: # In the case of sys_prompt provided, construct prompt from user input
+                prompt = "User instruction:"
+                if args:
+                    prompt += "\n" + "\n".join(args)
+                if kwargs:
+                    prompt += "\n" + "\n".join(f"{k}: {v}" for k, v in kwargs.items())
+            else:
+                raise ValueError("No prompt or system prompt provided.")
 
-        # First pass: Replace placeholders that we detected.
+        # First pass: Replace placeholders that we detected in the prompt (not system prompt).
         for placeholder in self.placeholders:
             if placeholder in kwargs:
                 prompt = prompt.replace(f"<<<{placeholder}>>>", str(kwargs.pop(placeholder)))
@@ -221,18 +223,19 @@ class PromptFunction:
 
         meta_instruction = (
             f"\nAdditional instruction:\n{user_instruction}\n"
-            "Ensure that original placeholders (<<<placeholder>>>) are preserved in the improved prompt."
+            "Ensure that original placeholders (<<<placeholder>>>) are preserved in the improved prompt and placed in a clear position."
+            "do not use any '<<<'  or '>>>' in the improved prompt other than the original placeholder, and you have to show the placehold in the exact same order and amount of times as in the original prompt."
         )
         
         improved_prompt = self.execute(ADD_BEFORE=meta_instruction, 
                                        model="gpt-4o", 
-                                       sys=f"You are asked to improve the above system prompt using the following instruction:\n{instruction}")
+                                       sys=f"You are asked to improve the above 'Base system prompt' using the following instruction:\n{instruction}")
         
         if use_prompt == "fabric":
             improved_prompt = improved_prompt.split("# OUTPUT\n\n")[-1]
         
         if replace:
-            self.prompt = improved_prompt
+            self.sys_prompt = improved_prompt
         return improved_prompt
 
     def set_temperature(self, temperature: float) -> None:
