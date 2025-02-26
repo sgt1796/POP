@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="POP-guotai",  # Package name
-    version="0.2.3",  # Version number
+    version="0.2.4",  # Version number
     author="Guotai Shen",
     author_email="sgt1796@gmail.com",  
     description="Reusable, mutable, prompt functions for LLMs.",
@@ -10,6 +10,10 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/sgt1796/POP",  
     packages=find_packages(),
+    include_package_data=True,  # Include non-Python files
+    package_data={
+        "POP": ["prompts/*.md"],  # Include all markdown files in the prompts directory
+    },
     install_requires=[
         "openai",
         "requests",
