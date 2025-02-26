@@ -2,11 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="POP-guotai",  # Package name
-    version="0.2.0",  # Version number
+    version="0.2.2",  # Version number
     author="Guotai Shen",
     author_email="sgt1796@gmail.com",  
     description="Reusable, mutable, prompt functions for LLMs.",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/sgt1796/POP",  
     packages=find_packages(),
