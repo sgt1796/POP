@@ -1,7 +1,7 @@
 import re
 import requests
 from dotenv import load_dotenv
-from os import getenv
+from os import getenv, path
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 from openai import OpenAI
@@ -138,7 +138,8 @@ class PromptFunction:
         system_message = {
             "role": "system",
             "content": (
-                f"You are a general-purpose helpful assistant. "
+                f"You are a general-purpose helpful assistant that is responsible for executing Prompt Functions, you will receive instructions and return as ordered. "
+                f"Since your return is expected to be read by code most of the time, DO NOT wrap your returns in '```' tags unless user explicitly asks for markdown or similar format. "
                 f"Base system prompt:\n{self.sys_prompt}\n\n"
                 f"Additional instructions:\n{system_extra}"
             )
@@ -194,7 +195,7 @@ class PromptFunction:
 
         return prompt
 
-    def _improve_prompt(self, replace: bool = False, use_prompt: str = "fabric", instruction: str = None, system_instruction: str = None) -> str:
+    def _improve_prompt(self, replace: bool = False, use_prompt: str = "fabric", instruction: str = None, user_instruction: str = None) -> str:
         """
         Improves the prompt using a metaprompt.
         
@@ -202,13 +203,16 @@ class PromptFunction:
             replace (bool): Whether to replace the existing prompt.
             use_prompt (str): Identifier for which metaprompt to use.
             instruction (str): Custom instruction if provided.
-            system_instruction (str): Additional system instruction.
+            user_instruction (str): Additional user instruction.
         
         Returns:
             str: The improved prompt.
         """
         if use_prompt == "fabric":
-            file = "prompts/fabric-improve_prompt.md"
+            # Dynamically build an absolute path based on where POP.py is located
+            current_dir = path.dirname(path.abspath(__file__)) ## __file__ refers to the current file
+            file = path.join(current_dir, "prompts", "fabric-improve_prompt.md")
+
             try:
                 with open(file, 'r', encoding='utf-8') as f:
                     instruction = f.read()
@@ -216,11 +220,13 @@ class PromptFunction:
                 raise FileNotFoundError(f"File not found: {file}")
 
         meta_instruction = (
-            f"\nAdditional instruction:\n{instruction}\n"
+            f"\nAdditional instruction:\n{user_instruction}\n"
             "Ensure that original placeholders (<<<placeholder>>>) are preserved in the improved prompt."
         )
         
-        improved_prompt = self.execute(ADD_BEFORE=meta_instruction, model="gpt-4o", sys=system_instruction)
+        improved_prompt = self.execute(ADD_BEFORE=meta_instruction, 
+                                       model="gpt-4o", 
+                                       sys=f"You are asked to improve the above system prompt using the following instruction:\n{instruction}")
         
         if use_prompt == "fabric":
             improved_prompt = improved_prompt.split("# OUTPUT\n\n")[-1]
