@@ -144,7 +144,7 @@ class PromptFunction:
                 f"Additional instructions:\n{system_extra}"
             )
         }
-        user_message = {"role": "user", "content": formatted_prompt}
+        user_message = {"role": "user", "content": f"<if no user message, check system prompt.> {formatted_prompt}"}
         messages = [system_message, user_message]
 
         # Call the LLM client.
