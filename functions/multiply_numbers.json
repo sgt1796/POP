@@ -1,0 +1,21 @@
+{
+  "name": "multiply_numbers",
+  "description": "Multiplies two numbers together",
+  "parameters": {
+    "type": "object",
+    "required": [
+      "number1",
+      "number2"
+    ],
+    "properties": {
+      "number1": {
+        "type": "number",
+        "description": "The first number to be multiplied"
+      },
+      "number2": {
+        "type": "number",
+        "description": "The second number to be multiplied"
+      }
+    }
+  }
+}

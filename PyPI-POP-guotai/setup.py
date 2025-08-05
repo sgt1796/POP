@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="POP-guotai",  # Package name
-    version="0.2.6",  # Version number
+    version="0.3.1",  # Version number
     author="Guotai Shen",
     author_email="sgt1796@gmail.com",  
     description="Reusable, mutable, prompt functions for LLMs.",
@@ -15,14 +15,15 @@ setup(
         "POP": ["prompts/*.md"],  # Include all markdown files in the prompts directory
     },
     install_requires=[
-        "openai",
-        "requests",
+        "openai>=1.0.0",
+        "requests>=2.25.0",
         "python-dotenv",
-        "pydantic",
-        "transformers",
-        #"torch",
-        "numpy",
+        "pydantic>=1.10",
+        "transformers>=4.30.0",
+        "numpy>=1.21",
         "backoff",
+        "Pillow>=9.0",
+        "google-genai>=0.2.0",  # For Gemini support
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
