@@ -127,7 +127,7 @@ class DeepseekClient(LLMClient):
         try:
             response = self.client.chat.completions.create(**request_payload)
         except Exception as e:
-            raise RuntimeError(f"OpenAI chat_completion error: {e}")
+            raise RuntimeError(f"Deepseek chat_completion error: {e}")
 
         return response
 

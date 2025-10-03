@@ -55,13 +55,14 @@ class PromptFunction:
                 self.client = self.client() # instantiate LLMClient if user passed a string
         self.last_response = None
         self.default_model_name = default_model[self.client.__class__.__name__]
+        print(f"[PromptFunction] Using client: {self.client.__class__.__name__}, default model: {self.default_model_name}")
 
     def execute(self, *args, **kwargs) -> str:
         """
         Executes the prompt function with dynamic argument injection.
         
         Special keys in kwargs:
-            - model: Model name (default "gpt-4o-mini")
+            - model: Model name (defaults to self.default_model_name).
             - sys: Additional system instructions.
             - fmt: Response format/schema.
             - tools: List of function tools to use (for function calling).
@@ -99,15 +100,23 @@ class PromptFunction:
         user_message = {"role": "user", "content": f"<if no user message, check system prompt.> {formatted_prompt}"}
         messages = [system_message, user_message]
 
-        # Call the LLM client.
-        raw_response = self.client.chat_completion(
-            messages=messages, 
-            model=model, 
-            temperature=temp, 
-            response_format=fmt,
-            tools=tools,
-            images=images
-        )
+        try:
+            # Call the LLM client.
+            raw_response = self.client.chat_completion(
+                messages=messages, 
+                model=model, 
+                temperature=temp, 
+                response_format=fmt,
+                tools=tools,
+                images=images
+            )
+        except Exception as e:
+            verbose = True
+            if verbose:
+                print(f"Error occurred while executing prompt function: {e}\nparameters:\nmodel: {model}\ntemperature: {temp}\nprompt: {formatted_prompt}\nsys: {system_extra}\nformat: {fmt}\ntools: {tools}\nimages: {images}")
+            # raise RuntimeError(f"Error occurred while executing prompt function: {e}\n")
+            print(f"Error occurred while executing prompt function: {e}\n")
+            return ""
 
         # Save entire response
         self.last_response = raw_response
@@ -194,7 +203,7 @@ class PromptFunction:
         )
         
         improved_prompt = self.execute(ADD_BEFORE=meta_instruction, 
-                                       model="gpt-4o", 
+                                       model="gpt-5", 
                                        sys=f"You are asked to improve the above 'Base system prompt' using the following instruction:\n{instruction}")
         
         if use_prompt == "fabric":
