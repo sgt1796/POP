@@ -1,0 +1,3 @@
+include README.md
+recursive-include POP/prompts *.md
+recursive-include POP/schemas *.json

@@ -30,7 +30,7 @@ Reusable, composable prompt functions for LLM workflows.
 This release cleans the architecture, moves all LLM client logic to a separate `LLMClient` module, and extends multi-LLM backend support.
 
 PyPI:
-[https://pypi.org/project/pypop/](https://pypi.org/project/pypop/)
+[https://pypi.org/project/pypop/](https://pypi.org/project/pop-python/)
 
 GitHub:
 [https://github.com/sgt1796/POP](https://github.com/sgt1796/POP)
@@ -122,7 +122,7 @@ Each backend now has consistent interface behavior and multimodal (text + image)
 Install from PyPI:
 
 ```bash
-pip install pypop
+pip install pop-python
 ```
 
 Or install in development mode from GitHub:
