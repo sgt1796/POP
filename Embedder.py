@@ -78,6 +78,7 @@ class Embedder:
 
         if not isinstance(texts, list):
             raise ValueError("Input must be a list of strings.")
+        
 
         if self.use_api:
             if self.use_api == 'jina':
@@ -148,6 +149,16 @@ class Embedder:
     @on_exception(expo, HTTPRequests.exceptions.RequestException, max_time=30)
     def _get_openai_embedding(self, texts: list) -> np.ndarray:
         """Fetches embeddings from the OpenAI API and returns them as a NumPy array. Requires OpenAI API key in .env file."""
+        # openai embedding API has a limit on single batch size of 2048 texts, so we may need to batch here
+        batch_size = 2048
+        if len(texts) > batch_size:
+            all_embeddings = []
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i+batch_size]
+                batch_embeddings = self._get_openai_embedding(batch_texts)
+                all_embeddings.append(batch_embeddings)
+            return np.vstack(all_embeddings)
+        
         texts = [text.replace("\n", " ") for text in texts]  # Clean text input
         response = self.client.embeddings.create(input=texts, model=self.model_name)
 

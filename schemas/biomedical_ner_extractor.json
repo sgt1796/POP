@@ -1,0 +1,37 @@
+{
+  "name": "Biomedical_NER_Extractor",
+  "schema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sentences": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "The original sentence from which entities are extracted."
+            },
+            "entities": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Named entities identified in the sentence."
+              },
+              "description": "List of extracted entities from the sentence."
+            }
+          },
+          "required": [
+            "text",
+            "entities"
+          ]
+        }
+      }
+    },
+    "required": [
+      "sentences"
+    ]
+  }
+}

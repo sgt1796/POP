@@ -1,5 +1,4 @@
-{
-  "name": "function-metaschema",
+{"name": "function-metaschema",
   "schema": {
     "type": "object",
     "properties": {

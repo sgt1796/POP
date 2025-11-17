@@ -3,22 +3,24 @@ import json
 import requests
 from dotenv import load_dotenv
 from os import getenv, path
-from LLMClient import LLMClient, OpenAIClient, GeminiClient, DeepseekClient, LocalPyTorchClient, DoubaoClient
+from LLMClient import LLMClient, OpenAIClient, GeminiClient, DeepseekClient, LocalPyTorchClient, DoubaoClient, OllamaClient
 
 # Load environment variables
 load_dotenv()
 default_model = {
-    "OpenAIClient": "gpt-4o-mini",
+    "OpenAIClient": "gpt-5-nano",
     "GeminiClient": "gemini-2.5-flash",
     "DeepseekClient": "deepseek-chat",
     "DoubaoClient": "doubao-seed-1-6-flash-250715",
+    "OllamaClient": "mistral:7b",
 }
 client_map = {
             "openai": OpenAIClient,
             "gemini": GeminiClient,
             "local": LocalPyTorchClient,
             "deepseek": DeepseekClient,
-            "doubao": DoubaoClient
+            "doubao": DoubaoClient,
+            "ollama": OllamaClient
         }
 
 ##############################################
@@ -42,7 +44,6 @@ class PromptFunction:
             client (LLMClient | str): An instance of an LLM client or a string identifier. Defaults to OpenAIClient. ("openai", "gemini", "local", "deepseek")
         """
         self.prompt = prompt
-        self.temperature = 0.7
         self.sys_prompt = sys_prompt
         self.placeholders = self._get_place_holder()
         self.client = None
@@ -53,6 +54,9 @@ class PromptFunction:
             self.client = client_map.get(client, None)
             if self.client:
                 self.client = self.client() # instantiate LLMClient if user passed a string
+
+        # gpt-5/mini/nano only supports temperature 1
+        self.temperature = 1 if self.client.__class__.__name__ == "OpenAIClient" and default_model[self.client.__class__.__name__] in ["gpt-5-nano", "gpt-5-mini", "gpt-5"] else 0.0
         self.last_response = None
         self.default_model_name = default_model[self.client.__class__.__name__]
         print(f"[PromptFunction] Using client: {self.client.__class__.__name__}, default model: {self.default_model_name}")
@@ -144,14 +148,16 @@ class PromptFunction:
         if not prompt:
             if self.sys_prompt: # In the case of sys_prompt provided, construct prompt from user input
                 prompt = "User instruction:"
-                if args:
-                    prompt += "\n" + "\n".join(args)
                 if kwargs:
                     prompt += "\n" + "\n".join(f"{k}: {v}" for k, v in kwargs.items())
             else:
                 raise ValueError("No prompt or system prompt provided.")
+                
+        # Append any positional arguments
+        if args:
+            prompt = prompt + "\n" + "\n".join(args)
 
-        # First pass: Replace placeholders that we detected in the prompt (not system prompt).
+        # Replace placeholders detected in the prompt (not system prompt).
         for placeholder in self.placeholders:
             if placeholder in kwargs:
                 prompt = prompt.replace(f"<<<{placeholder}>>>", str(kwargs.pop(placeholder)))
@@ -165,10 +171,7 @@ class PromptFunction:
             prompt = before + "\n" + prompt
         if after:
             prompt = prompt + "\n" + after
-        
-        # Append any positional arguments at the end.
-        if args:
-            prompt = prompt + "\n" + "\n".join(args)
+
 
         return prompt
 
@@ -245,7 +248,7 @@ class PromptFunction:
                         description: str = None,
                         meta_prompt: str = None,
                         meta_schema: dict = None,
-                        model: str = "gpt-4o-mini",
+                        model: str = "gpt-5-mini",
                         save: bool = True
                        ) -> dict:
         """
@@ -255,8 +258,8 @@ class PromptFunction:
 
         Args:
             description (str): What the function should do.
-            meta_prompt (str): Optionally override the meta prompt.
-            meta_schema (dict): Optionally override the meta schema.
+            meta_prompt (str): Optionally override the meta prompt, path to file.
+            meta_schema (dict): Optionally override the meta schema, path to file.
             model (str): Which model to use.
             save (bool): whether to store to functions/ directory
 
@@ -277,36 +280,31 @@ class PromptFunction:
         if meta_prompt is None:
             try:
                 meta_prompt = PromptFunction.load_prompt(
-                    "prompts/openai-function_description_generator.md"
+                    "prompts/openai-json_schema_generator.md"
                 )
             except FileNotFoundError:
                 raise FileNotFoundError(
-                    "Meta prompt file 'prompts/openai-function_description_generator.md' not found. "
+                    "Meta prompt file 'prompts/openai-json_schema_generator.md' not found. "
                     "Either place it there or pass meta_prompt manually."
                 )
+        else:
+            meta_prompt = PromptFunction.load_prompt(meta_prompt)
 
         # fallback meta schema from file
         if meta_schema is None:
-            try:
-                meta_schema = json.loads(
-                    PromptFunction.load_prompt(
-                        "prompts/openai-function_description_generator.fmt"
-                    )
-                )
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    "Meta schema file 'prompts/openai-function_description_generator.fmt' not found. "
-                    "Either place it there or pass meta_schema manually."
-                )
+            pass
+        else:   
+            with open(meta_schema, "r", encoding="utf-8") as f:
+                meta_schema = json.load(f)
 
         completion = self.client.chat_completion(
             model=model,
-            temperature=0.02,
             response_format=meta_schema,
+            temperature=self.temperature,
             messages=[
                 {
                     "role": "system",
-                    "content": PromptFunction.load_prompt("prompts/openai-function_description_generator.md"),
+                    "content": meta_prompt,
                 },
                 {
                     "role": "user",
@@ -314,90 +312,22 @@ class PromptFunction:
                 },
             ],
         )
-
         parsed_schema = json.loads(completion.choices[0].message.content)
 
         # store to disk if requested
         if save:
             import os
-            os.makedirs("functions", exist_ok=True)
+            os.makedirs("schemas", exist_ok=True)
             
-            function_name = parsed_schema["name"]
-            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", function_name)
-            file_path = os.path.join("functions", f"{safe_name}.json")
-            
+            prompts_name = parsed_schema["name"] if "name" in parsed_schema else "generated_schema"
+            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", prompts_name)
+            file_path = os.path.join("schemas", f"{safe_name}.json")
+
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(parsed_schema, f, indent=2)
             print(f"[generate_schema] Function schema saved to {file_path}")
 
         return parsed_schema
-
-    def generate_code(self, 
-                    schema: dict | str = None,
-                    model: str = "gpt-4o",
-                    save: bool = True) -> str:
-        """
-        Generate actual Python code for a function, given its meta schema.
-
-        Args:
-            schema (dict): The function schema (from generate_schema).
-            model (str): LLM model name.
-            save (bool): Whether to save the code to a .py file.
-
-        Returns:
-            str: The generated Python code as string.
-        """
-        if not schema:
-            raise ValueError("You must provide a function schema to generate code.")
-        # if schema is a string, try to parse it as JSON
-        if isinstance(schema, str):
-            try:
-                schema = json.loads(schema)
-            except json.JSONDecodeError:
-                raise ValueError("Provided schema string is not valid JSON.")
-        
-        description = schema.get("description", "")
-        function_name = schema.get("name", "generated_function")
-        parameters = schema.get("parameters", {}).get("properties", {})
-
-        # create a user instruction
-        param_list = "\n".join(
-            f"{param}: {info['description']}" 
-            for param, info in parameters.items()
-        )
-
-        code_prompt = (
-            f"Please write a Python function named `{function_name}`. "
-            f"The function should do the following: {description}\n"
-            f"Parameters:\n{param_list}\n"
-            "Provide the full working code, including type annotations and docstring."
-        )
-
-        messages = [
-            {"role": "system", "content": "You are a senior Python developer who writes clean and robust code."},
-            {"role": "user", "content": code_prompt}
-        ]
-
-        completion = self.client.chat_completion(
-            messages=messages,
-            model=model,
-            temperature=0.1
-        )
-        
-        code = completion.choices[0].message.content
-
-        # optionally store it
-        if save:
-            import os
-            os.makedirs("functions", exist_ok=True)
-            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", function_name)
-            file_path = os.path.join("functions", f"{safe_name}.py")
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(code)
-            print(f"[generate_code] Python code saved to {file_path}")
-
-        return code
-
 
     @staticmethod
     def load_prompt(file: str) -> str:
@@ -406,7 +336,6 @@ class PromptFunction:
         """
         with open(file, 'r', encoding='utf-8') as f:
             return f.read()
-        
 
 ##############################################
 # Utility Function

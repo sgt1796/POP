@@ -1,0 +1,92 @@
+{
+  "name": "entity_extraction_per_sentence",
+  "type": "object",
+  "properties": {
+    "sentences": {
+      "type": "array",
+      "description": "A list of sentences with their extracted entities.",
+      "items": {
+        "$ref": "#/$defs/sentence"
+      }
+    }
+  },
+  "required": [
+    "sentences"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "sentence": {
+      "type": "object",
+      "description": "An input sentence and the entities found in it.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "The original sentence text."
+        },
+        "entities": {
+          "type": "array",
+          "description": "List of extracted entities for this sentence.",
+          "items": {
+            "$ref": "#/$defs/entity"
+          }
+        }
+      },
+      "required": [
+        "text",
+        "entities"
+      ],
+      "additionalProperties": false
+    },
+    "entity": {
+      "type": "object",
+      "description": "A single extracted entity with its label.",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Surface form of the entity as it appears in the sentence."
+        },
+        "label": {
+          "type": "string",
+          "description": "The entity label; must be one of the allowed labels.",
+          "enum": [
+            "PERSON",
+            "ORG",
+            "LOCATION",
+            "GPE",
+            "FACILITY",
+            "EVENT",
+            "WORK_OF_ART",
+            "LAW",
+            "LANGUAGE",
+            "PRODUCT",
+            "SOFTWARE",
+            "DATASET",
+            "TECHNOLOGY",
+            "SCIENTIFIC_TERM",
+            "METHOD",
+            "CONCEPT",
+            "TOPIC",
+            "FIELD",
+            "MEASURE",
+            "QUANTITY",
+            "PERCENT",
+            "MONEY",
+            "VALUE",
+            "DATE",
+            "TIME",
+            "DURATION",
+            "DOCUMENT",
+            "URL",
+            "ID",
+            "OTHER"
+          ]
+        }
+      },
+      "required": [
+        "text",
+        "label"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
