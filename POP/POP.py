@@ -3,7 +3,7 @@ import json
 import requests
 from dotenv import load_dotenv
 from os import getenv, path
-from LLMClient import LLMClient, OpenAIClient, GeminiClient, DeepseekClient, LocalPyTorchClient, DoubaoClient, OllamaClient
+from .LLMClient import LLMClient, OpenAIClient, GeminiClient, DeepseekClient, LocalPyTorchClient, DoubaoClient, OllamaClient
 
 # Load environment variables
 load_dotenv()
