@@ -30,7 +30,7 @@ Reusable, composable prompt functions for LLM workflows.
 This release cleans the architecture, moves all LLM client logic to a separate `LLMClient` module, and extends multi-LLM backend support.
 
 PyPI:
-[https://pypi.org/project/pypop/](https://pypi.org/project/pop-python/)
+[https://pypi.org/project/pop-python/](https://pypi.org/project/pop-python/)
 
 GitHub:
 [https://github.com/sgt1796/POP](https://github.com/sgt1796/POP)
@@ -156,7 +156,7 @@ All clients automatically read keys from environment variables.
 The core abstraction of POP is the `PromptFunction` class.
 
 ```python
-from pypop import PromptFunction
+from POP import PromptFunction
 
 pf = PromptFunction(
     sys_prompt="You are a helpful AI.",
@@ -254,7 +254,7 @@ What this does:
 POP includes a unified embedding interface:
 
 ```python
-from pypop.Embedder import Embedder
+from POP.Embedder import Embedder
 
 embedder = Embedder(use_api="openai")
 vecs = embedder.get_embedding(["hello world"])
@@ -273,7 +273,7 @@ Large inputs are chunked automatically when needed.
 # 9. Web Snapshot Utility
 
 ```python
-from pypop import get_text_snapshot
+from POP import get_text_snapshot
 
 text = get_text_snapshot("https://example.com", image_caption=True)
 print(text[:500])
@@ -291,7 +291,7 @@ Supports:
 # 10. Examples
 
 ```python
-from pypop import PromptFunction
+from POP import PromptFunction
 
 pf = PromptFunction(prompt="Give me 3 creative names for a <<<thing>>>.")
 
