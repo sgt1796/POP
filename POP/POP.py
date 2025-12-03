@@ -70,6 +70,7 @@ class PromptFunction:
             - sys: Additional system instructions.
             - fmt: Response format/schema.
             - tools: List of function tools to use (for function calling).
+            - tool_choice
             - temp: Temperature.
             - ADD_BEFORE: Text to prepend.
             - ADD_AFTER: Text to append.
@@ -87,6 +88,9 @@ class PromptFunction:
         tools = kwargs.pop("tools", None)
         temp = kwargs.pop("temp", self.temperature)
         images = kwargs.pop("images", None)
+        tool_choice = kwargs.pop("tool_choice", None)
+        if tools and not tool_choice:
+            tool_choice = "auto"
 
         # Prepare the prompt with dynamic injections.
         formatted_prompt = self._prepare_prompt(*args, **kwargs)
@@ -105,15 +109,19 @@ class PromptFunction:
         messages = [system_message, user_message]
 
         try:
-            # Call the LLM client.
-            raw_response = self.client.chat_completion(
-                messages=messages, 
-                model=model, 
-                temperature=temp, 
-                response_format=fmt,
-                tools=tools,
-                images=images
-            )
+            # Call the LLM client. Always include tool_choice when tools are provided.
+            call_kwargs = {
+                "messages": messages,
+                "model": model,
+                "temperature": temp,
+                "response_format": fmt,
+                "tools": tools,
+                "images": images,
+                # Always include tool_choice key so callers can assert on it
+                "tool_choice": tool_choice,
+            }
+
+            raw_response = self.client.chat_completion(**call_kwargs)
         except Exception as e:
             verbose = True
             if verbose:

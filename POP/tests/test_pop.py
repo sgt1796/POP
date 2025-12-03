@@ -127,6 +127,44 @@ def test_execute_prefers_tool_call_arguments(monkeypatch):
     assert out == arguments
 
 
+def test_execute_forwards_tools_and_tool_choice(monkeypatch):
+    recorded = {}
+
+    def fake_chat_completion(self, messages, model, temperature, **kwargs):
+        recorded["tools"] = kwargs.get("tools")
+        recorded["tool_choice"] = kwargs.get("tool_choice")
+        return DummyResponse("ok")
+
+    monkeypatch.setattr(POP.OpenAIClient, "chat_completion", fake_chat_completion)
+
+    tools = [{
+        "type": "function",
+        "function": {"name": "demo_tool", "description": "demo", "parameters": {}}
+    }]
+    pf = PromptFunction(prompt="Tool forward", client="openai")
+    pf.execute(tools=tools)
+
+    assert recorded["tools"] == tools
+    assert recorded["tool_choice"] == "auto"
+
+
+def test_execute_records_last_response_with_tool_calls(monkeypatch):
+    tool_args = json.dumps({"arg": "val"})
+    tool_calls = [DummyToolCall(tool_args)]
+
+    def fake_chat_completion(self, messages, model, temperature, **kwargs):
+        return DummyResponse("ignored", tool_calls=tool_calls)
+
+    monkeypatch.setattr(POP.OpenAIClient, "chat_completion", fake_chat_completion)
+
+    pf = PromptFunction(prompt="store last response", client="openai")
+    out = pf.execute()
+
+    assert out == tool_args
+    assert pf.last_response is not None
+    assert pf.last_response.choices[0].message.tool_calls[0].function.arguments == tool_args
+
+
 def test_set_temperature_overrides_default_in_execute(monkeypatch):
     recorded = {}
 

@@ -84,11 +84,11 @@ class OpenAIClient(LLMClient):
             else:
                 request_payload["response_format"] = {"type": "json_schema", "json_schema": fmt}
 
-        # Handle function tools
+        # Handle function tools (already OpenAI-style)
         tools = kwargs.get("tools", None)
         if tools:
-            request_payload["tools"] = [{"type": "function", "function": tool} for tool in tools]
-            request_payload["tool_choice"] = "auto"
+            request_payload["tools"] = tools
+            request_payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         # Temporary patch for models not supporting system roles
         if model == "o1-mini" and request_payload["messages"] and request_payload["messages"][0]["role"] == "system":
@@ -139,6 +139,12 @@ class DeepseekClient(LLMClient):
             content = msg.get("content", "")
             role = msg.get("role", "user")
             request_payload["messages"].append({"role": role, "content": content})
+
+        # tools: OpenAI-style list
+        tools = kwargs.get("tools", None)
+        if tools:
+            request_payload["tools"] = tools
+            request_payload["tool_choice"] = kwargs.get("tool_choice", "auto")
 
         # Execute request
         try:
@@ -291,7 +297,8 @@ class DoubaoClient(LLMClient):
         # Tools (function calling)
         tools = kwargs.get("tools")
         if tools:
-            raise NotImplementedError("DoubaoClient does not support tools yet.")
+            payload["tools"] = tools
+            payload["tool_choice"] = kwargs.get("tool_choice", "auto")
         try:
             response = self.client.chat.completions.create(**payload)
         except Exception as e:

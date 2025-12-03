@@ -7,7 +7,7 @@ long_description = (this_dir / "README.md").read_text(encoding="utf-8")
 setup(
     # PyPI project name
     name="pop-python",
-    version="1.0.3",  # update as needed
+    version="1.0.4",  # update as needed
 
     author="Guotai Shen",
     author_email="sgt1796@gmail.com",

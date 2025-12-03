@@ -47,7 +47,10 @@ def test_openai_client_builds_request_payload(monkeypatch):
         model="gpt-test",
         temperature=0.3,
         response_format={"type": "object"},
-        tools=[{"name": "f", "parameters": {}}],
+        tools=[{
+            "type": "function",
+            "function": {"name": "f", "description": "demo", "parameters": {}}
+        }],
     )
 
     assert resp.choices[0].message.content == "ok"
@@ -58,7 +61,7 @@ def test_openai_client_builds_request_payload(monkeypatch):
     # response_format converted to json_schema wrapper
     assert "response_format" in payload
     assert payload["response_format"]["type"] == "json_schema"
-    assert "tools" in payload
+    assert payload["tools"][0]["function"]["name"] == "f"
     assert payload["tool_choice"] == "auto"
 
 
@@ -98,13 +101,19 @@ def test_deepseek_client_uses_openai_compatible_stub(monkeypatch):
     resp = client.chat_completion(
         messages=[{"role": "user", "content": "hello"}],
         model="deepseek-chat",
-        temperature=0.0
+        temperature=0.0,
+        tools=[{
+            "type": "function",
+            "function": {"name": "tool", "description": "deep", "parameters": {}}
+        }],
     )
 
     assert resp.choices[0].message.content == "deepseek ok"
     payload = captured["payload"]
     assert payload["model"] == "deepseek-chat"
     assert payload["messages"][0]["content"] == "hello"
+    assert payload["tools"][0]["function"]["name"] == "tool"
+    assert payload["tool_choice"] == "auto"
 
 
 def test_doubao_client_builds_payload(monkeypatch):
@@ -145,6 +154,11 @@ def test_doubao_client_builds_payload(monkeypatch):
         model="doubao-model",
         temperature=0.2,
         max_tokens=128,
+        tools=[{
+            "type": "function",
+            "function": {"name": "dbtool", "description": "test", "parameters": {}}
+        }],
+        tool_choice="required",
     )
 
     assert resp.choices[0].message.content == "doubao ok"
@@ -156,3 +170,5 @@ def test_doubao_client_builds_payload(monkeypatch):
     assert isinstance(payload["messages"][0]["content"], list) or isinstance(
         payload["messages"][0]["content"], str
     )
+    assert payload["tools"][0]["function"]["name"] == "dbtool"
+    assert payload["tool_choice"] == "required"
