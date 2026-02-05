@@ -1,11 +1,11 @@
 # Prompt Oriented Programming (POP)
 
 ```python
-from POP import PromptFunction
+from pop import PromptFunction
 
 pf = PromptFunction(
     prompt="Draw a simple ASCII art of <<<object>>>.",
-    client = "openai"
+    client="openai",
 )
 
 print(pf.execute(object="a cat"))
@@ -27,7 +27,7 @@ print(pf.execute(object="a rocket"))
 ---
 Reusable, composable prompt functions for LLM workflows.
 
-This release cleans the architecture, moves all LLM client logic to a separate `LLMClient` module, and extends multi-LLM backend support.
+This 1.1.0 dev update restructures POP into small, focused modules and adds a provider registry inspired by pi-mono's `ai` package.
 
 PyPI:
 [https://pypi.org/project/pop-python/](https://pypi.org/project/pop-python/)
@@ -40,21 +40,19 @@ GitHub:
 ## Table of Contents
 
 1. [Overview](#1-overview)
-2. [Major Updates](#2-major-updates)
-3. [Features](#3-features)
-4. [Installation](#4-installation)
-5. [Setup](#5-setup)
-6. [PromptFunction](#6-promptfunction)
-
-   * Placeholders
-   * Reserved Keywords
-   * Executing prompts
-   * Improving prompts
-7. [Function Schema Generation](#7-function-schema-generation)
-8. [Embeddings](#8-embeddings)
-9. [Web Snapshot Utility](#9-web-snapshot-utility)
-10. [Examples](#10-examples)
-11. [Contributing](#11-contributing)
+2. [Update Note](#2-update-note)
+3. [Major Updates](#3-major-updates)
+4. [Features](#4-features)
+5. [Installation](#5-installation)
+6. [Setup](#6-setup)
+7. [PromptFunction](#7-promptfunction)
+8. [Provider Registry](#8-provider-registry)
+9. [Tool Calling](#9-tool-calling)
+10. [Function Schema Generation](#10-function-schema-generation)
+11. [Embeddings](#11-embeddings)
+12. [Web Snapshot Utility](#12-web-snapshot-utility)
+13. [Examples](#13-examples)
+14. [Contributing](#14-contributing)
 ---
 
 # 1. Overview
@@ -68,43 +66,64 @@ Instead of scattering prompt strings across your codebase, POP lets you:
 * improve prompts using meta-prompting
 * generate OpenAI-compatible function schemas
 * use unified embedding tools
-* work with multiple LLM providers through `LLMClient` subclasses
+* work with multiple LLM providers through a centralized registry
 
 POP is designed to be simple, extensible, and production-friendly.
 
 ---
 
-# 2. Major Updates
+# 2. Update Note
 
-This version introduces structural and functional improvements:
+**1.1.0-dev (February 5, 2026)**
 
-### 2.1. LLMClient moved into its own module
-
-`LLMClient.py` now holds all LLM backends:
-
-* OpenAI
-* Gemini
-* Deepseek
-* Doubao
-* Local PyTorch stub
-* Extensible architecture for adding new backends
-
-### 2.2. Expanded multi-LLM support
-
-Each backend now has consistent interface behavior and multimodal (text + image) support where applicable.
+* **Breaking import path**: use `pop` (lowercase) for imports. Example: `from pop import PromptFunction`.
+* **Provider registry**: clients live under `pop/providers/` and are instantiated via `pop.api_registry`.
+* **LLMClient base class**: now in `pop.providers.llm_client` (kept as an abstract base class).
 
 ---
 
-# 3. Features
+# 3. Major Updates
+
+### 3.1. Modularized architecture
+
+The project has been decomposed into small, focused modules:
+
+* `pop/prompt_function.py`
+* `pop/embedder.py`
+* `pop/context.py`
+* `pop/api_registry.py`
+* `pop/providers/` (one provider per file)
+* `pop/utils/`
+
+This mirrors the structure in the pi-mono `ai` package for clarity and maintainability.
+
+### 3.2. Provider registry + per-provider clients
+
+Each provider has its own adaptor (OpenAI, Gemini, DeepSeek, Doubao, Local, Ollama). The registry gives you:
+
+* `list_providers()`
+* `list_default_model()`
+* `list_models()`
+* `get_client()`
+
+---
+
+# 4. Features
 
 * **Reusable Prompt Functions**
   Use `<<<placeholder>>>` syntax to inject dynamic content.
 
 * **Multi-LLM Backend**
-  Choose between OpenAI, Gemini, Deepseek, Doubao, or local models.
+  Choose between OpenAI, Gemini, DeepSeek, Doubao, Local, or Ollama.
+
+* **Tool Calling**
+  Pass a tool schema list to `execute()` and receive tool-call arguments.
+
+* **Multimodal (Text + Image)**
+  Pass `images=[...]` (URLs or base64) when the provider supports it.
 
 * **Prompt Improvement**
-  Improve or rewrite prompts using Fabric-style metaprompts.
+  Improve or rewrite prompts using Fabric-style meta-prompts.
 
 * **Function Schema Generation**
   Convert natural language descriptions into OpenAI-function schemas.
@@ -117,7 +136,7 @@ Each backend now has consistent interface behavior and multimodal (text + image)
 
 ---
 
-# 4. Installation
+# 5. Installation
 
 Install from PyPI:
 
@@ -135,7 +154,7 @@ pip install -e .
 
 ---
 
-# 5. Setup
+# 6. Setup
 
 Create a `.env` file in your project root:
 
@@ -151,16 +170,16 @@ All clients automatically read keys from environment variables.
 
 ---
 
-# 6. PromptFunction
+# 7. PromptFunction
 
 The core abstraction of POP is the `PromptFunction` class.
 
 ```python
-from POP import PromptFunction
+from pop import PromptFunction
 
 pf = PromptFunction(
     sys_prompt="You are a helpful AI.",
-    prompt="Give me a summary about <<<topic>>>."
+    prompt="Give me a summary about <<<topic>>>.",
 )
 
 print(pf.execute(topic="quantum biology"))
@@ -168,7 +187,7 @@ print(pf.execute(topic="quantum biology"))
 
 ---
 
-## 6.1. Placeholder Syntax
+## 7.1. Placeholder Syntax
 
 Use angle-triple-brackets inside your prompt:
 
@@ -186,7 +205,7 @@ prompt = "Translate <<<sentence>>> to French."
 
 ---
 
-## 6.2. Reserved Keywords
+## 7.2. Reserved Keywords
 
 Within `.execute()`, the following keyword arguments are **reserved** and should not be used as placeholder names:
 
@@ -194,6 +213,7 @@ Within `.execute()`, the following keyword arguments are **reserved** and should
 * `sys`
 * `fmt`
 * `tools`
+* `tool_choice`
 * `temp`
 * `images`
 * `ADD_BEFORE`
@@ -203,32 +223,104 @@ Most keywords are used for parameters. `ADD_BEFORE` and `ADD_AFTER` will attach 
 
 ---
 
-## 6.3. Executing prompts
+## 7.3. Executing prompts
 
 ```python
 result = pf.execute(
     topic="photosynthesis",
-    model="gpt-4o-mini",
-    temp=0.3
+    model="gpt-5-mini",
+    temp=0.3,
 )
 ```
 
 ---
 
-## 6.4. Improving Prompts
+## 7.4. Improving Prompts
 
 You can ask POP to rewrite or enhance your system prompt:
 
 ```python
-better = pf._improve_prompt()
+better = pf.improve_prompt()
 print(better)
 ```
 
-This uses a Fabric-inspired meta-prompt bundled in the `prompts/` directory.
+This uses a Fabric-inspired meta-prompt bundled in the `pop/prompts/` directory.
 
 ---
 
-# 7. Function Schema Generation
+# 8. Provider Registry
+
+Use the registry to list providers/models or instantiate clients.
+
+```python
+from pop import list_providers, list_models, list_default_model, get_client
+
+print(list_providers())
+print(list_default_model())
+print(list_models())
+
+client = get_client("openai")
+```
+
+Non-default model example:
+
+```python
+from pop import PromptFunction, get_client
+
+client = get_client("gemini", "gemini-2.5-pro")
+
+pf = PromptFunction(prompt="Draw a rocket.", client=client)
+print(pf.execute())
+```
+
+Direct provider class example:
+
+```python
+from pop import PromptFunction
+from pop.providers.gemini_client import GeminiClient
+
+pf = PromptFunction(prompt="Draw a rocket.", client=GeminiClient(model="gemini-2.5-pro"))
+print(pf.execute())
+```
+
+---
+
+# 9. Tool Calling
+
+```python
+from pop import PromptFunction
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_reminder",
+            "description": "Create a reminder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "when": {"type": "string"},
+                },
+                "required": ["description"],
+            },
+        },
+    }
+]
+
+pf = PromptFunction(
+    sys_prompt="You are a helpful assistant.",
+    prompt="<<<input>>>",
+    client="openai",
+)
+
+result = pf.execute(input="Remind me to walk at 9am.", tools=tools)
+print(result)
+```
+
+---
+
+# 10. Function Schema Generation
 
 POP supports generating **OpenAI function-calling schemas** from natural language descriptions.
 
@@ -245,16 +337,16 @@ What this does:
 * Applies a standard meta-prompt
 * Uses the selected LLM backend
 * Produces a valid JSON Schema for OpenAI function calling
-* Optionally saves it under `functions/`
+* Optionally saves it under `schemas/`
 
 ---
 
-# 8. Embeddings
+# 11. Embeddings
 
 POP includes a unified embedding interface:
 
 ```python
-from POP.Embedder import Embedder
+from pop import Embedder
 
 embedder = Embedder(use_api="openai")
 vecs = embedder.get_embedding(["hello world"])
@@ -270,10 +362,10 @@ Large inputs are chunked automatically when needed.
 
 ---
 
-# 9. Web Snapshot Utility
+# 12. Web Snapshot Utility
 
 ```python
-from POP import get_text_snapshot
+from pop.utils.web_snapshot import get_text_snapshot
 
 text = get_text_snapshot("https://example.com", image_caption=True)
 print(text[:500])
@@ -288,10 +380,10 @@ Supports:
 
 ---
 
-# 10. Examples
+# 13. Examples
 
 ```python
-from POP import PromptFunction
+from pop import PromptFunction
 
 pf = PromptFunction(prompt="Give me 3 creative names for a <<<thing>>>.")
 
@@ -299,9 +391,20 @@ print(pf.execute(thing="robot"))
 print(pf.execute(thing="new language"))
 ```
 
+Multimodal example (provider must support images):
+
+```python
+from pop import PromptFunction
+
+image_b64 = "..."  # base64-encoded image
+
+pf = PromptFunction(prompt="Describe the image.", client="openai")
+print(pf.execute(images=[image_b64]))
+```
+
 ---
 
-# 11. Contributing
+# 14. Contributing
 
 Steps:
 
