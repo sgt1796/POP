@@ -1,0 +1,67 @@
+{
+    "openai": {
+        "chat": [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4.1",
+            "gpt-4.1-high",
+            "o1",
+            "gpt-3.5-turbo"
+        ],
+        "embedding": [
+            "text-embedding-3-large",
+            "text-embedding-3-small"
+        ]
+    },
+
+    "gemini": {
+        "chat": [
+            "gemini-ultra",
+            "gemini-pro",
+            "gemini"
+        ],
+        "lightweight": [
+            "gemini-mini",
+            "gemini-nano"
+        ],
+        "multimodal": [
+            "gemini-vision"
+        ]
+    },
+
+    "deepseek": {
+        "chat": [
+            "deepseek-llm-7b-chat",
+            "deepseek-llm-67b-chat",
+            "deepseek-v3",
+            "deepseek-r1"
+        ],
+        "base": [
+            "deepseek-llm-7b-base",
+            "deepseek-llm-67b-base"
+        ],
+        "reasoning": [
+            "deepseek-r1",
+            "deepseek-r1-zero"
+        ]
+    },
+
+    "ollama": {
+        "note": "Ollama exposes only locally installed models via API/CLI",
+        "list_method": {
+            "cli": "ollama list",
+            "api": "GET http://localhost:11434/api/tags"
+        },
+        "commonly_used_models": [
+            "llama2:7b",
+            "llama2:13b",
+            "llama3:8b",
+            "qwen2.5:7b",
+            "qwen2.5:14b",
+            "gemma3:1b",
+            "gemma3:7b",
+            "deepseek-llm:7b",
+            "deepseek-llm:67b"
+        ]
+    }
+}
