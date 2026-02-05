@@ -21,6 +21,8 @@ from .api_registry import (
     list_providers,
     list_default_model,
     list_models,
+    get_default_model,
+    get_model,
     get_client,
 )
 
@@ -32,6 +34,7 @@ __all__ = [
     "list_providers",
     "list_default_model",
     "list_models",
+    "get_default_model",
     "get_model",
     "get_client",
 ]

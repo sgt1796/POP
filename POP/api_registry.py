@@ -83,6 +83,30 @@ def list_models() -> Dict[str, List[str]]:
                 models[provider_name] = flattened
     return models
 
+def get_default_model(provider_name: str) -> Optional[str]:
+    """Return the default model name for a provider."""
+    return _get_default_model(provider_name)
+
+def get_model(model_name: str) -> Optional[object]:
+    """Instantiate and return a client based on a model name.
+
+    The lookup searches the provider catalog first, then falls back to
+    default model names defined in ``DEFAULT_MODEL``.
+    """
+    # Search providers.json for a matching model name
+    providers = _load_provider_catalog()
+    for provider_name, provider_data in providers.items():
+        if isinstance(provider_data, dict):
+            flattened = _flatten_models(provider_data)
+            if model_name in flattened:
+                return get_client(provider_name, model_name)
+    # Fall back to default model mappings
+    for provider_name, cls in DEFAULT_CLIENTS.items():
+        default_model = DEFAULT_MODEL.get(cls.__name__)
+        if default_model == model_name:
+            return get_client(provider_name, model_name)
+    return None
+
 def get_client(provider_name: str, model_name: Optional[str] = None) -> Optional[object]:
     """Instantiate and return an LLM client for the given provider.
 
@@ -105,7 +129,11 @@ def get_client(provider_name: str, model_name: Optional[str] = None) -> Optional
     cls = DEFAULT_CLIENTS.get(provider_name)
 
     if cls is not None:
-        return cls(model=model_name)
+        try:
+            return cls(model=model_name)
+        except TypeError:
+            # Some clients (e.g., LocalPyTorchClient) do not accept model args.
+            return cls()
     
     return None
 
@@ -115,5 +143,6 @@ __all__ = [
     "list_default_model",
     "list_models",
     "get_model",
+    "get_default_model",
     "get_client",
 ]
