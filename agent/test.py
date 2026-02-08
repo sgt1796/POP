@@ -1,4 +1,4 @@
-import asyncio, time
+import asyncio, time, os
 from .agent import Agent
 from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
 from pop.stream import stream
@@ -34,6 +34,72 @@ class FastTool(AgentTool):
         )
 
     
+# Logging helpers
+LOG_LEVELS = {
+    "quiet": 0,
+    "messages": 1,
+    "stream": 2,
+    "debug": 3,
+}
+
+
+def _resolve_log_level(value: str) -> int:
+    if not value:
+        return LOG_LEVELS["messages"]
+    key = str(value).strip().lower()
+    if key.isdigit():
+        return int(key)
+    return LOG_LEVELS.get(key, LOG_LEVELS["messages"])
+
+
+def _extract_texts(message):
+    texts = []
+    if not message:
+        return texts
+    content = getattr(message, "content", None)
+    if not content:
+        return texts
+    for item in content:
+        if isinstance(item, TextContent):
+            texts.append(item.text)
+        elif isinstance(item, dict) and item.get("type") == "text":
+            texts.append(item.get("text", ""))
+    return texts
+
+
+def _format_message_line(message):
+    role = getattr(message, "role", "unknown")
+    return f"- {role}: {_extract_texts(message)}"
+
+
+def make_event_logger(level: str = "messages"):
+    level_value = _resolve_log_level(level)
+
+    def log(event):
+        if level_value <= LOG_LEVELS["quiet"]:
+            return
+        etype = event.get("type")
+
+        if etype == "message_end":
+            message = event.get("message")
+            if message:
+                print(_format_message_line(message))
+            return
+
+        if level_value >= LOG_LEVELS["stream"] and etype == "message_update":
+            assistant_event = event.get("assistantMessageEvent") or {}
+            if assistant_event.get("type") == "text_delta":
+                delta = assistant_event.get("delta")
+                if delta:
+                    print(f"- assistant: {[delta]}")
+            return
+
+        if level_value >= LOG_LEVELS["debug"]:
+            print(f"Event: {etype}")
+
+    return log
+
+
 def print_state(agent):
     print("Agent State:")
     for k, v in agent._state.__dict__.items():
@@ -50,15 +116,8 @@ async def main():
     agent.set_model({"provider": "openai", "id": None, "api": None})
     agent.set_tools([SlowTool(), FastTool()])
 
-    def log(event):
-        cp = event.copy() # don't mutate the original event
-        t = cp.pop("type")
-        # print(agent.state.messages)
-        print(f"Event: {t}, Message: {cp.get('message').content if cp.get('message') else None}, Details: {cp.get('details')}")
-        
-
-
-    unsubscribe_log = agent.subscribe(log)
+    log_level = os.getenv("AGENT_LOG_LEVEL", "messages")
+    unsubscribe_log = agent.subscribe(make_event_logger(log_level))
     #unsubscribe_log()
 
     agent.follow_up(AgentMessage(
