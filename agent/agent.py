@@ -237,6 +237,9 @@ class Agent:
     def set_thinking_level(self, level: ThinkingLevel) -> None:
         self._state.thinking_level = level  # type: ignore
 
+    def set_timeout(self, timeout_s: float) -> None:
+        self._request_timeout_s = timeout_s
+
     def set_steering_mode(self, mode: str) -> None:
         if mode not in {"all", "one-at-a-time"}:
             raise ValueError("steering_mode must be 'all' or 'one-at-a-time'")

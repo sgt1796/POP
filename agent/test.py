@@ -1,7 +1,7 @@
 import asyncio, time, os
 from .agent import Agent
 from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
-from pop.stream import stream
+from POP.stream import stream
 
 class SlowTool(AgentTool):
     name = "slow"
@@ -10,15 +10,16 @@ class SlowTool(AgentTool):
     label = "Slow"
 
     async def execute(self, tool_call_id, params, signal=None, on_update=None):
+        t0 = time.time()
         seconds = float(params.get("seconds", 1.0))
-        steps = max(1, int(seconds / 0.1))
+        steps = max(1, int(seconds * 10))
         for _ in range(steps):
             if signal and signal.is_set():
                 break
             await asyncio.sleep(0.1)
         return AgentToolResult(
             content=[TextContent(type="text", text=f"slow done {seconds}s")],
-            details={},
+            details={"time_elapsed": time.time() - t0},
         )
 
 class FastTool(AgentTool):
@@ -73,6 +74,15 @@ def _format_message_line(message):
 
 
 def make_event_logger(level: str = "messages"):
+    '''
+    Create an event logger function for agent events.
+    
+    Parameters
+    ----------
+    level : str
+        The logging level. One of "quiet", "messages", "stream", "debug".
+        Defaults to "messages".
+    '''
     level_value = _resolve_log_level(level)
 
     def log(event):
@@ -93,9 +103,9 @@ def make_event_logger(level: str = "messages"):
                 if delta:
                     print(f"- assistant: {[delta]}")
             return
-
+        # Level 4: debug - log all events
         if level_value >= LOG_LEVELS["debug"]:
-            print(f"Event: {etype}")
+            print(f"Event: {event}")
 
     return log
 
@@ -116,7 +126,7 @@ async def main():
     agent.set_model({"provider": "openai", "id": None, "api": None})
     agent.set_tools([SlowTool(), FastTool()])
 
-    log_level = os.getenv("AGENT_LOG_LEVEL", "messages")
+    log_level = "messages"
     unsubscribe_log = agent.subscribe(make_event_logger(log_level))
     #unsubscribe_log()
 
@@ -127,11 +137,12 @@ async def main():
     ))
 
     task = asyncio.create_task(agent.prompt("Call tool slow with seconds=1.2, then call tool fast"))
+    agent.set_timeout(120)  # Set a timeout of 10 seconds for the agent's operations
 
     ##await asyncio.sleep(5)
     agent.steer(AgentMessage(
         role="user",
-        content=[TextContent(type="text", text="steer: actually, call slow 4 times, but keep the total time unchanged. then fast")],
+        content=[TextContent(type="text", text="steer: actually, call slow 4 times, and in between of each call add a fast call, but keep the total time unchanged as 1.2s. then fast")],
         timestamp=time.time(),
     ))
     await task
