@@ -35,8 +35,6 @@ def tools():
 
 
 def _is_live_enabled(provider: str | None = None) -> bool:
-    if os.getenv("POP_LIVE_TESTS") != "1":
-        return False
     if provider:
         return has_api_key(provider)
     return True

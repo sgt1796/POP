@@ -14,9 +14,9 @@ import asyncio
 import time
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from agent_loop import AgentLoopConfig, agent_loop, agent_loop_continue
-from event_stream import EventStream
-from agent_types import (
+from .agent_loop import AgentLoopConfig, agent_loop, agent_loop_continue
+from .event_stream import EventStream
+from .agent_types import (
     AgentContext,
     AgentEvent,
     AgentMessage,

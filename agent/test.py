@@ -1,8 +1,7 @@
-
 import asyncio, time
-from agent import Agent
-from agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
-from POP.stream import stream
+from .agent import Agent
+from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
+from pop.stream import stream
 
 class SlowTool(AgentTool):
     name = "slow"
@@ -34,19 +33,6 @@ class FastTool(AgentTool):
             details={},
         )
 
-class FakeStream:
-    def __init__(self, message):
-        self._message = message
-        self._started = False
-
-    async def __aiter__(self):
-        if self._started:
-            return
-        self._started = True
-        yield {"type": "done", "message": self._message}
-
-    async def result(self):
-        return self._message
     
 def print_state(agent):
     print("Agent State:")
@@ -59,40 +45,7 @@ def print_state(agent):
     print(f"{k}: {v}")
 
 
-def make_stream(script):
-    state = {"i": 0}
-    async def stream_fn(model, context, options):
-        msg = script[state["i"]]
-        state["i"] += 1
-        return FakeStream(msg)
-    return stream_fn
-
-def assistant_toolcall_message():
-    return {
-        "role": "assistant",
-        "content": [
-            {"type": "toolCall", "id": "call1", "name": "slow", "arguments": {"seconds": 1.2}},
-            {"type": "toolCall", "id": "call2", "name": "fast", "arguments": {}},
-        ],
-        "timestamp": time.time(),
-        "stopReason": "stop",
-    }
-
-def assistant_text_message(text):
-    return {
-        "role": "assistant",
-        "content": [{"type": "text", "text": text}],
-        "timestamp": time.time(),
-        "stopReason": "stop",
-    }
-
 async def main():
-    script = [
-        assistant_toolcall_message(),
-        assistant_text_message("Saw your steering message. New plan."),
-        assistant_text_message("Follow up handled."),
-    ]
-
     agent = Agent({"stream_fn": stream})
     agent.set_model({"provider": "openai", "id": None, "api": None})
     agent.set_tools([SlowTool(), FastTool()])
@@ -100,7 +53,9 @@ async def main():
     def log(event):
         cp = event.copy() # don't mutate the original event
         t = cp.pop("type")
-        print(f"[ {t} ] {cp}")
+        # print(agent.state.messages)
+        print(f"Event: {t}, Message: {cp.get('message').content if cp.get('message') else None}, Details: {cp.get('details')}")
+        
 
 
     unsubscribe_log = agent.subscribe(log)
@@ -113,11 +68,11 @@ async def main():
     ))
 
     task = asyncio.create_task(agent.prompt("Call tool slow with seconds=1.2, then call tool fast"))
-    print(agent._state)
+
     ##await asyncio.sleep(5)
     agent.steer(AgentMessage(
         role="user",
-        content=[TextContent(type="text", text="steer: change direction")],
+        content=[TextContent(type="text", text="steer: actually, call slow 4 times, but keep the total time unchanged. then fast")],
         timestamp=time.time(),
     ))
     await task

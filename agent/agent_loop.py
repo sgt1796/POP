@@ -35,8 +35,8 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Union
 from dotenv import load_dotenv
 
-from event_stream import EventStream
-from agent_types import (
+from .event_stream import EventStream
+from .agent_types import (
     AgentContext,
     AgentMessage,
     AgentTool,
