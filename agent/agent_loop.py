@@ -33,6 +33,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from dotenv import load_dotenv
 
 from event_stream import EventStream
 from agent_types import (
@@ -142,6 +143,8 @@ class AgentLoopConfig:
     api_key: Optional[str] = None
     other_options: Dict[str, Any] = field(default_factory=dict)
 
+# Try loading environment variables from a .env file, if present.
+load_dotenv()
 
 # Type alias for the LLM transport function
 StreamFn = Callable[[Dict[str, Any], Dict[str, Any], Dict[str, Any]], Awaitable[Any]]
@@ -628,14 +631,31 @@ async def _stream_assistant_response(
     # Attach tool definitions if present.  Tools are expected to
     # implement name, description and parameters attributes.
     if context.tools:
-        llm_context["tools"] = [
-            {
-                "name": tool.name,
-                "description": getattr(tool, "description", ""),
-                "parameters": getattr(tool, "parameters", {}),
-            }
-            for tool in context.tools
-        ]
+        provider = (config.model.get("provider") or config.model.get("api") or "").lower()
+        # OpenAI-compatible providers expect OpenAI tool schema.
+        openai_like = {"openai", "deepseek", "doubao"}
+        if provider in openai_like:
+            llm_context["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": getattr(tool, "description", ""),
+                        "parameters": getattr(tool, "parameters", {}),
+                    },
+                }
+                for tool in context.tools
+            ]
+        else:
+            llm_context["tools"] = [
+                {
+                    "type": "custom",
+                    "name": tool.name,
+                    "description": getattr(tool, "description", ""),
+                    "parameters": getattr(tool, "parameters", {}),
+                }
+                for tool in context.tools
+            ]
 
     # Assemble options for the LLM transport
     options: Dict[str, Any] = dict(config.other_options)

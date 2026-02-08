@@ -99,7 +99,7 @@ class Agent:
             at once or one per turn.
         ``stream_fn`` : callable
             LLM transport function.  Defaults to
-            ``POP.stream_simple`` if available.
+            ``POP.stream.stream`` if available.
         ``session_id`` : str
             Session identifier forwarded to the LLM provider.
         ``get_api_key`` : callable
@@ -115,14 +115,16 @@ class Agent:
     def __init__(self, opts: Optional[Dict[str, Any]] = None) -> None:
         opts = opts or {}
         # Initialise state with sensible defaults
-        # Model: use POP.get_model if available; otherwise a dummy
-        if POP is not None:
-            try:
-                default_model = POP.get_model("google", "gemini-2.5-flash-lite-preview-06-17")  # type: ignore
-            except Exception:
-                default_model = {"provider": "unknown", "id": "unknown", "api": None}
-        else:
+        # Model: use POP.get_model to check if POP is available and the default model can be retrieved; if not, use a placeholder
+ 
+        try:
+            POP.get_client("gemini", "gemini-2.5-flash-lite-preview-06-17")  # type: ignore
+            default_model = {"provider": "gemini", "id": "gemini-2.5-flash-lite", "api": None}  # type: ignore
+        except Exception as e:
+            print(f"[ initialize ] pop exception: {e}.")
             default_model = {"provider": "unknown", "id": "unknown", "api": None}
+        
+        print(f"[ initialize ] default_model: {default_model}.")
         initial = AgentState(
             system_prompt="",
             model=default_model,
@@ -150,15 +152,7 @@ class Agent:
         self._steering_mode: str = opts.get("steering_mode", "one-at-a-time")
         self._follow_up_mode: str = opts.get("follow_up_mode", "one-at-a-time")
         # Stream function and session configuration
-        if "stream_fn" in opts:
-            self.stream_fn = opts["stream_fn"]
-        else:
-            # Use POP.stream_simple if available
-            if POP is not None:
-                self.stream_fn = POP.stream_simple  # type: ignore
-            else:
-                # Delay error until first invocation
-                self.stream_fn = None  # type: ignore
+        self.stream_fn = opts["stream_fn"] if "stream_fn" in opts else POP.stream.stream
         self._session_id: Optional[str] = opts.get("session_id")
         self.get_api_key: Optional[Callable[[str], Awaitable[Optional[str]]]] = opts.get("get_api_key")
         self._thinking_budgets: Optional[Dict[str, Any]] = opts.get("thinking_budgets")
