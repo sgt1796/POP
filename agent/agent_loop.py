@@ -222,6 +222,13 @@ def _dict_to_agent_message(msg: Dict[str, Any]) -> AgentMessage:
             content.append(ThinkingContent(type="thinking", thinking=item.get("thinking", ""), thinking_signature=item.get("thinkingSignature")))
         elif t == "toolCall":
             # During streaming a partialJson field may be present; we ignore it here
+            extra_content = item.get("extra_content")
+            if extra_content is None:
+                extra_content = item.get("extraContent")
+            if extra_content is None:
+                thought_sig = item.get("thought_signature") or item.get("thoughtSignature")
+                if thought_sig:
+                    extra_content = {"google": {"thought_signature": thought_sig}}
             content.append(
                 ToolCallContent(
                     type="toolCall",
@@ -229,6 +236,7 @@ def _dict_to_agent_message(msg: Dict[str, Any]) -> AgentMessage:
                     name=item.get("name", ""),
                     arguments=item.get("arguments", {}),
                     partial_json=item.get("partialJson"),
+                    extra_content=extra_content,
                 )
             )
         else:

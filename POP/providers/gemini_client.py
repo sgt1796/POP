@@ -102,7 +102,7 @@ class GeminiClient(LLMClient):
         if kwargs:
             request_payload.update(kwargs)
         
-        print(f"GeminiClient sending request: {request_payload}")  # Debug log of the request payload
+        #print(f"GeminiClient sending request: {request_payload}")  # Debug log of the request payload
         # Send the request. If something goes wrong, raise a runtime error.
         try:
             response = self.client.chat.completions.create(**request_payload)

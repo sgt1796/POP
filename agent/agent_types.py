@@ -73,7 +73,9 @@ class ToolCallContent:
     A tool call instructs the agent to invoke a named tool with
     structured arguments.  During streaming the ``partial_json`` field
     may be used to accumulate a JSON payload; once complete it is
-    parsed into the ``arguments`` dictionary.
+    parsed into the ``arguments`` dictionary.  ``extra_content`` stores
+    provider-specific metadata (e.g., Gemini thought signatures for
+    OpenAI compatibility).
     """
 
     type: str = "toolCall"
@@ -81,6 +83,7 @@ class ToolCallContent:
     name: str = ""
     arguments: Dict[str, Any] = field(default_factory=dict)
     partial_json: Optional[str] = None
+    extra_content: Optional[Dict[str, Any]] = None
 
 
 # Union of all content item types

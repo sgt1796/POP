@@ -41,7 +41,8 @@ def _message_to_text(message: Dict[str, Any]) -> str:
 def _context_to_messages(context: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
     messages: List[Dict[str, Any]] = []
     provider = (provider or "").lower()
-    openai_like = {"openai", "deepseek", "doubao"}
+    # Gemini uses the OpenAI-compatible chat completions API, so treat it like OpenAI.
+    openai_like = {"openai", "deepseek", "doubao", "gemini"}
     system_prompt = context.get("system_prompt") or context.get("system")
     if system_prompt:
         messages.append({"role": "system", "content": str(system_prompt)})
@@ -49,15 +50,6 @@ def _context_to_messages(context: Dict[str, Any], provider: str) -> List[Dict[st
         if not isinstance(msg, dict):
             continue
         role = msg.get("role", "user")
-        if provider == "gemini":
-            # Preserve structured content/tool metadata for Gemini conversion.
-            payload = dict(msg)
-            if "role" not in payload:
-                payload["role"] = role
-            if "content" not in payload:
-                payload["content"] = _message_to_text(msg)
-            messages.append(payload)
-            continue
         if provider in openai_like:
             if role == "toolResult":
                 tool_call_id = msg.get("toolCallId") or msg.get("tool_call_id")
@@ -77,17 +69,25 @@ def _context_to_messages(context: Dict[str, Any], provider: str) -> List[Dict[st
                             call_id = item.get("id") or f"call_{len(tool_calls)}"
                             name = item.get("name") or ""
                             arguments = item.get("arguments") or {}
+                            extra_content = item.get("extra_content")
+                            if extra_content is None:
+                                extra_content = item.get("extraContent")
+                            if extra_content is None:
+                                thought_sig = item.get("thought_signature") or item.get("thoughtSignature")
+                                if thought_sig:
+                                    extra_content = {"google": {"thought_signature": thought_sig}}
                             try:
                                 arg_str = json.dumps(arguments)
                             except Exception:
                                 arg_str = "{}"
-                            tool_calls.append(
-                                {
-                                    "id": call_id,
-                                    "type": "function",
-                                    "function": {"name": name, "arguments": arg_str},
-                                }
-                            )
+                            tool_call: Dict[str, Any] = {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {"name": name, "arguments": arg_str},
+                            }
+                            if extra_content is not None:
+                                tool_call["extra_content"] = extra_content
+                            tool_calls.append(tool_call)
                         elif isinstance(item, dict) and "text" in item:
                             text_parts.append(str(item.get("text") or ""))
                         else:
@@ -139,6 +139,40 @@ def _extract_text_and_tool_calls(response: Any) -> Tuple[str, List[Dict[str, Any
     else:
         text = str(content)
 
+    def _extract_extra_content(call: Any) -> Optional[Dict[str, Any]]:
+        if isinstance(call, dict):
+            extra = call.get("extra_content") or call.get("extraContent")
+            if extra is None:
+                thought_sig = call.get("thought_signature") or call.get("thoughtSignature")
+                if thought_sig:
+                    extra = {"google": {"thought_signature": thought_sig}}
+            return extra
+        extra = getattr(call, "extra_content", None) or getattr(call, "extraContent", None)
+        if extra is None:
+            thought_sig = getattr(call, "thought_signature", None) or getattr(call, "thoughtSignature", None)
+            if thought_sig:
+                extra = {"google": {"thought_signature": thought_sig}}
+        if extra is None:
+            model_extra = getattr(call, "model_extra", None)
+            if isinstance(model_extra, dict):
+                extra = model_extra.get("extra_content") or model_extra.get("extraContent")
+                if extra is None:
+                    thought_sig = model_extra.get("thought_signature") or model_extra.get("thoughtSignature")
+                    if thought_sig:
+                        extra = {"google": {"thought_signature": thought_sig}}
+        if extra is None and hasattr(call, "model_dump"):
+            try:
+                data = call.model_dump()
+            except Exception:
+                data = None
+            if isinstance(data, dict):
+                extra = data.get("extra_content") or data.get("extraContent")
+                if extra is None:
+                    thought_sig = data.get("thought_signature") or data.get("thoughtSignature")
+                    if thought_sig:
+                        extra = {"google": {"thought_signature": thought_sig}}
+        return extra
+
     raw_calls = getattr(msg, "tool_calls", None)
     if raw_calls:
         for idx, call in enumerate(raw_calls):
@@ -163,9 +197,11 @@ def _extract_text_and_tool_calls(response: Any) -> Tuple[str, List[Dict[str, Any
                     args = json.loads(args_raw) if args_raw else {}
                 except Exception:
                     args = {"_raw": args_raw}
-            tool_calls.append(
-                {"type": "toolCall", "id": call_id, "name": name, "arguments": args}
-            )
+            tool_call: Dict[str, Any] = {"type": "toolCall", "id": call_id, "name": name, "arguments": args}
+            extra_content = _extract_extra_content(call)
+            if extra_content is not None:
+                tool_call["extra_content"] = extra_content
+            tool_calls.append(tool_call)
     return text, tool_calls
 
 
