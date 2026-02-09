@@ -1,7 +1,7 @@
 import asyncio, time, os
 from .agent import Agent
 from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
-from POP.stream import stream
+from pop.stream import stream
 
 class SlowTool(AgentTool):
     name = "slow"
@@ -123,7 +123,8 @@ def print_state(agent):
 
 async def main():
     agent = Agent({"stream_fn": stream})
-    agent.set_model({"provider": "openai", "id": None, "api": None})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-flash-preview", "api": None})
+    #agent.set_model({"provider": "openai", "id": "gpt-5-mini", "api": None})
     agent.set_tools([SlowTool(), FastTool()])
 
     log_level = "messages"

@@ -49,6 +49,15 @@ def _context_to_messages(context: Dict[str, Any], provider: str) -> List[Dict[st
         if not isinstance(msg, dict):
             continue
         role = msg.get("role", "user")
+        if provider == "gemini":
+            # Preserve structured content/tool metadata for Gemini conversion.
+            payload = dict(msg)
+            if "role" not in payload:
+                payload["role"] = role
+            if "content" not in payload:
+                payload["content"] = _message_to_text(msg)
+            messages.append(payload)
+            continue
         if provider in openai_like:
             if role == "toolResult":
                 tool_call_id = msg.get("toolCallId") or msg.get("tool_call_id")
