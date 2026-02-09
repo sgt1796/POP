@@ -48,11 +48,12 @@ GitHub:
 7. [PromptFunction](#7-promptfunction)
 8. [Provider Registry](#8-provider-registry)
 9. [Tool Calling](#9-tool-calling)
-10. [Function Schema Generation](#10-function-schema-generation)
-11. [Embeddings](#11-embeddings)
-12. [Web Snapshot Utility](#12-web-snapshot-utility)
-13. [Examples](#13-examples)
-14. [Contributing](#14-contributing)
+10. [Agent Loop (pop.agent)](#10-agent-loop-popagent)
+11. [Function Schema Generation](#11-function-schema-generation)
+12. [Embeddings](#12-embeddings)
+13. [Web Snapshot Utility](#13-web-snapshot-utility)
+14. [Examples](#14-examples)
+15. [Contributing](#15-contributing)
 ---
 
 # 1. Overview
@@ -320,7 +321,108 @@ print(result)
 
 ---
 
-# 10. Function Schema Generation
+# 10. Agent Loop (pop.agent)
+
+POP includes a lightweight, event-driven agent loop in the `agent/` package
+for tool calling, steering, and follow-ups. It is designed to sit on top of
+the POP provider registry via `pop.stream.stream`, but you can supply any
+`stream_fn` that matches the `(model, context, options)` signature and returns
+an async event stream with a `result()` method.
+
+In this repo the import path is `agent` (for example, `from agent import Agent`).
+
+**Key concepts**
+
+* **Agent** – stateful controller for model, messages, tools, and queues.
+* **AgentTool** – async tool interface; implement `execute` and return `AgentToolResult`.
+* **Steering** – inject user messages mid-run with `agent.steer(...)`.
+* **Follow-ups** – queue messages after tool execution with `agent.follow_up(...)`.
+* **Events** – subscribe to lifecycle events for streaming UIs.
+
+**Minimal example**
+
+```python
+import asyncio
+from agent import Agent
+from pop.stream import stream
+
+async def main():
+    agent = Agent({"stream_fn": stream})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-flash-preview", "api": None})
+    await agent.prompt("Say hi")
+    await agent.wait_for_idle()
+
+asyncio.run(main())
+```
+
+**Tools + steering + follow-up (condensed from `agent/test.py`)**
+
+```python
+import asyncio, time
+from agent import Agent
+from agent.agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
+from pop.stream import stream
+
+class SlowTool(AgentTool):
+    name = "slow"
+    description = "Sleep a bit"
+    parameters = {"type": "object", "properties": {"seconds": {"type": "number"}}}
+    label = "Slow"
+
+    async def execute(self, tool_call_id, params, signal=None, on_update=None):
+        seconds = float(params.get("seconds", 1.0))
+        await asyncio.sleep(seconds)
+        return AgentToolResult(
+            content=[TextContent(type="text", text=f"slow done {seconds}s")],
+            details={},
+        )
+
+class FastTool(AgentTool):
+    name = "fast"
+    description = "Return quickly"
+    parameters = {"type": "object", "properties": {}}
+    label = "Fast"
+
+    async def execute(self, tool_call_id, params, signal=None, on_update=None):
+        return AgentToolResult(
+            content=[TextContent(type="text", text="fast done")],
+            details={},
+        )
+
+async def main():
+    agent = Agent({"stream_fn": stream})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-flash-preview", "api": None})
+    agent.set_tools([SlowTool(), FastTool()])
+
+    agent.follow_up(AgentMessage(
+        role="user",
+        content=[TextContent(type="text", text="follow up: summarize")],
+        timestamp=time.time(),
+    ))
+
+    task = asyncio.create_task(
+        agent.prompt("Call tool slow with seconds=1.2, then call tool fast")
+    )
+    agent.steer(AgentMessage(
+        role="user",
+        content=[TextContent(type="text", text="steer: actually, call slow 4 times, and in between of each call add a fast call, but keep the total time unchanged as 1.2s. then fast")],
+        timestamp=time.time(),
+    ))
+    await task
+    await agent.wait_for_idle()
+
+asyncio.run(main())
+```
+
+Notes:
+
+* If `pop` is not importable, pass `stream_fn` explicitly; the agent does not ship a provider.
+* `agent/test.py` is the most complete end-to-end example right now.
+* Run the demo with `python -m agent.test`.
+
+---
+
+# 11. Function Schema Generation
 
 POP supports generating **OpenAI function-calling schemas** from natural language descriptions.
 
@@ -341,7 +443,7 @@ What this does:
 
 ---
 
-# 11. Embeddings
+# 12. Embeddings
 
 POP includes a unified embedding interface:
 
@@ -362,7 +464,7 @@ Large inputs are chunked automatically when needed.
 
 ---
 
-# 12. Web Snapshot Utility
+# 13. Web Snapshot Utility
 
 ```python
 from pop.utils.web_snapshot import get_text_snapshot
@@ -380,7 +482,7 @@ Supports:
 
 ---
 
-# 13. Examples
+# 14. Examples
 
 ```python
 from pop import PromptFunction
@@ -404,7 +506,7 @@ print(pf.execute(images=[image_b64]))
 
 ---
 
-# 14. Contributing
+# 15. Contributing
 
 Steps:
 
