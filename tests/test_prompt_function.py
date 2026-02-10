@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from pop.prompt_function import PromptFunction
-from pop.providers.llm_client import LLMClient
+from POP.prompt_function import PromptFunction
+from POP.providers.llm_client import LLMClient
 
 
 class DummyClient(LLMClient):

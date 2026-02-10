@@ -1,6 +1,6 @@
 import pytest
 
-from pop.utils.web_snapshot import get_text_snapshot
+from POP.utils.web_snapshot import get_text_snapshot
 
 
 @pytest.mark.integration

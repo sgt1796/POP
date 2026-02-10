@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import pop.embedder as emb_mod
-from pop.embedder import Embedder
+import POP.embedder as emb_mod
+from POP.embedder import Embedder
 
 
 def test_invalid_use_api_raises():

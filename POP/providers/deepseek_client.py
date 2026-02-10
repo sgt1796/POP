@@ -51,7 +51,14 @@ class DeepseekClient(LLMClient):
         for msg in messages:
             role = msg.get("role", "user")
             content = msg.get("content", "")
-            request_payload["messages"].append({"role": role, "content": content})
+            payload_msg: Dict[str, Any] = {"role": role, "content": content}
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                payload_msg["tool_calls"] = tool_calls
+            tool_call_id = msg.get("tool_call_id") or msg.get("toolCallId")
+            if tool_call_id:
+                payload_msg["tool_call_id"] = tool_call_id
+            request_payload["messages"].append(payload_msg)
 
         # Tools support (OpenAI‑style function calls)
         tools = kwargs.get("tools")

@@ -1,11 +1,11 @@
-from pop.api_registry import (
+from POP.api_registry import (
     list_providers,
     list_default_model,
     list_models,
     get_client,
     get_model,
 )
-from pop.providers.local_client import LocalPyTorchClient
+from POP.providers.local_client import LocalPyTorchClient
 
 
 def test_list_providers_contains_defaults():

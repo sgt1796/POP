@@ -7,7 +7,7 @@ long_description = (this_dir / "README.md").read_text(encoding="utf-8")
 setup(
     # PyPI project name
     name="pop-python",
-    version="1.1.0",  # update as needed
+    version="1.1.1",  # update as needed
 
     author="Guotai Shen",
     author_email="sgt1796@gmail.com",
@@ -36,7 +36,6 @@ setup(
         "numpy>=1.21",
         "backoff",
         "Pillow>=9.0",
-        "google-genai>=0.2.0",
     ],
 
     python_requires=">=3.8",

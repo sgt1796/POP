@@ -1,4 +1,4 @@
-import pop.utils.web_snapshot as ws
+import POP.utils.web_snapshot as ws
 
 
 def test_web_snapshot_headers_and_url(monkeypatch):

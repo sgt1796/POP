@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pop.env_api_keys import has_api_key
+from POP.env_api_keys import has_api_key
 
 
 def _build_fake_response(content: str | None = None, tool_arguments: str | None = None) -> SimpleNamespace:
@@ -35,8 +35,6 @@ def tools():
 
 
 def _is_live_enabled(provider: str | None = None) -> bool:
-    if os.getenv("POP_LIVE_TESTS") != "1":
-        return False
     if provider:
         return has_api_key(provider)
     return True

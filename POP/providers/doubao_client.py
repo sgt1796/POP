@@ -83,7 +83,14 @@ class DoubaoClient(LLMClient):
                     else:
                         multi.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
                 content = multi
-            payload["messages"].append({"role": role, "content": content})
+            payload_msg: Dict[str, Any] = {"role": role, "content": content}
+            tool_calls = msg.get("tool_calls")
+            if tool_calls:
+                payload_msg["tool_calls"] = tool_calls
+            tool_call_id = msg.get("tool_call_id") or msg.get("toolCallId")
+            if tool_call_id:
+                payload_msg["tool_call_id"] = tool_call_id
+            payload["messages"].append(payload_msg)
 
         # Function tools
         tools = kwargs.get("tools")

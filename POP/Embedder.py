@@ -9,7 +9,7 @@ POP project’s ``Embedder.py`` and can be used independently of
 
 Example usage:
 
->>> from pop.embedder import Embedder
+>>> from POP.embedder import Embedder
 >>> embedder = Embedder(use_api='openai')
 >>> vectors = embedder.get_embedding(["Hello, world!"])
 

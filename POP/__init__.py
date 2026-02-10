@@ -6,7 +6,7 @@ re‑exports provider registry functions for convenience.
 
 Example usage::
 
-    from pop import PromptFunction, Context, list_providers
+    from POP import PromptFunction, Context, list_providers
 
     ctx = Context(system="You are a helpful assistant")
     pf = PromptFunction(sys_prompt="Translate", prompt="<<<text>>>", client="openai")
