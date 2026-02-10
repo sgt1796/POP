@@ -121,7 +121,7 @@ class Agent:
             POP.get_client("gemini", "gemini-2.5-flash-lite-preview-06-17")  # type: ignore
             default_model = {"provider": "gemini", "id": "gemini-2.5-flash-lite", "api": None}  # type: ignore
         except Exception as e:
-            print(f"[ initialize ] pop exception: {e}.")
+            print(f"[ initialize ] POP exception: {e}.")
             default_model = {"provider": "unknown", "id": "unknown", "api": None}
         
         print(f"[ initialize ] default_model: {default_model}.")

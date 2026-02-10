@@ -1,7 +1,7 @@
 import asyncio, time, os
 from .agent import Agent
 from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
-from pop.stream import stream
+from POP.stream import stream
 
 class SlowTool(AgentTool):
     name = "slow"

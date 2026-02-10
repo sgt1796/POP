@@ -8,7 +8,7 @@ function schema generation and prompt saving.
 
 This implementation mirrors the original POP ``PromptFunction`` but
 delegates provider instantiation to the central registry defined in
-``pop.api_registry`` and stores meta prompts in ``pop/prompts/``.
+``POP.api_registry`` and stores meta prompts in ``POP/prompts/``.
 """
 
 from __future__ import annotations
@@ -356,7 +356,7 @@ class PromptFunction:
 
         The ``file`` parameter may be an absolute or relative path.  If
         it is relative, it is resolved relative to this module's
-        directory to ensure that files under ``pop/prompts`` are found.
+        directory to ensure that files under ``POP/prompts`` are found.
         """
         # Determine absolute path
         if not path.isabs(file):

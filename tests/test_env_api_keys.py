@@ -1,4 +1,4 @@
-from pop.env_api_keys import has_api_key
+from POP.env_api_keys import has_api_key
 
 
 def test_has_api_key_true_when_set(monkeypatch):

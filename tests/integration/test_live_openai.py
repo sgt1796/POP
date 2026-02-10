@@ -1,7 +1,7 @@
 import json
 import pytest
 
-from pop import PromptFunction
+from POP import PromptFunction
 
 
 @pytest.mark.integration

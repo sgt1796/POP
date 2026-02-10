@@ -1,7 +1,7 @@
 # Prompt Oriented Programming (POP)
 
 ```python
-from pop import PromptFunction
+from POP import PromptFunction
 
 pf = PromptFunction(
     prompt="Draw a simple ASCII art of <<<object>>>.",
@@ -48,7 +48,7 @@ GitHub:
 7. [PromptFunction](#7-promptfunction)
 8. [Provider Registry](#8-provider-registry)
 9. [Tool Calling](#9-tool-calling)
-10. [Agent Loop (pop.agent)](#10-agent-loop-popagent)
+10. [Agent Loop (POP.agent)](#10-agent-loop-popagent)
 11. [Function Schema Generation](#11-function-schema-generation)
 12. [Embeddings](#12-embeddings)
 13. [Web Snapshot Utility](#13-web-snapshot-utility)
@@ -77,9 +77,9 @@ POP is designed to be simple, extensible, and production-friendly.
 
 **1.1.0-dev (February 5, 2026)**
 
-* **Breaking import path**: use `pop` (lowercase) for imports. Example: `from pop import PromptFunction`.
-* **Provider registry**: clients live under `pop/providers/` and are instantiated via `pop.api_registry`.
-* **LLMClient base class**: now in `pop.providers.llm_client` (kept as an abstract base class).
+* **Breaking import path**: use `POP` (uppercase) for imports. Example: `from POP import PromptFunction`.
+* **Provider registry**: clients live under `POP/providers/` and are instantiated via `POP.api_registry`.
+* **LLMClient base class**: now in `POP.providers.llm_client` (kept as an abstract base class).
 
 ---
 
@@ -89,12 +89,12 @@ POP is designed to be simple, extensible, and production-friendly.
 
 The project has been decomposed into small, focused modules:
 
-* `pop/prompt_function.py`
-* `pop/embedder.py`
-* `pop/context.py`
-* `pop/api_registry.py`
-* `pop/providers/` (one provider per file)
-* `pop/utils/`
+* `POP/prompt_function.py`
+* `POP/embedder.py`
+* `POP/context.py`
+* `POP/api_registry.py`
+* `POP/providers/` (one provider per file)
+* `POP/utils/`
 
 This mirrors the structure in the pi-mono `ai` package for clarity and maintainability.
 
@@ -176,7 +176,7 @@ All clients automatically read keys from environment variables.
 The core abstraction of POP is the `PromptFunction` class.
 
 ```python
-from pop import PromptFunction
+from POP import PromptFunction
 
 pf = PromptFunction(
     sys_prompt="You are a helpful AI.",
@@ -245,7 +245,7 @@ better = pf.improve_prompt()
 print(better)
 ```
 
-This uses a Fabric-inspired meta-prompt bundled in the `pop/prompts/` directory.
+This uses a Fabric-inspired meta-prompt bundled in the `POP/prompts/` directory.
 
 ---
 
@@ -254,7 +254,7 @@ This uses a Fabric-inspired meta-prompt bundled in the `pop/prompts/` directory.
 Use the registry to list providers/models or instantiate clients.
 
 ```python
-from pop import list_providers, list_models, list_default_model, get_client
+from POP import list_providers, list_models, list_default_model, get_client
 
 print(list_providers())
 print(list_default_model())
@@ -266,7 +266,7 @@ client = get_client("openai")
 Non-default model example:
 
 ```python
-from pop import PromptFunction, get_client
+from POP import PromptFunction, get_client
 
 client = get_client("gemini", "gemini-2.5-pro")
 
@@ -277,8 +277,8 @@ print(pf.execute())
 Direct provider class example:
 
 ```python
-from pop import PromptFunction
-from pop.providers.gemini_client import GeminiClient
+from POP import PromptFunction
+from POP.providers.gemini_client import GeminiClient
 
 pf = PromptFunction(prompt="Draw a rocket.", client=GeminiClient(model="gemini-2.5-pro"))
 print(pf.execute())
@@ -289,7 +289,7 @@ print(pf.execute())
 # 9. Tool Calling
 
 ```python
-from pop import PromptFunction
+from POP import PromptFunction
 
 tools = [
     {
@@ -321,11 +321,11 @@ print(result)
 
 ---
 
-# 10. Agent Loop (pop.agent)
+# 10. Agent Loop (POP.agent)
 
 POP includes a lightweight, event-driven agent loop in the `agent/` package
 for tool calling, steering, and follow-ups. It is designed to sit on top of
-the POP provider registry via `pop.stream.stream`, but you can supply any
+the POP provider registry via `POP.stream.stream`, but you can supply any
 `stream_fn` that matches the `(model, context, options)` signature and returns
 an async event stream with a `result()` method.
 
@@ -344,7 +344,7 @@ In this repo the import path is `agent` (for example, `from agent import Agent`)
 ```python
 import asyncio
 from agent import Agent
-from pop.stream import stream
+from POP.stream import stream
 
 async def main():
     agent = Agent({"stream_fn": stream})
@@ -361,7 +361,7 @@ asyncio.run(main())
 import asyncio, time
 from agent import Agent
 from agent.agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
-from pop.stream import stream
+from POP.stream import stream
 
 class SlowTool(AgentTool):
     name = "slow"
@@ -416,7 +416,7 @@ asyncio.run(main())
 
 Notes:
 
-* If `pop` is not importable, pass `stream_fn` explicitly; the agent does not ship a provider.
+* If `POP` is not importable, pass `stream_fn` explicitly; the agent does not ship a provider.
 * `agent/test.py` is the most complete end-to-end example right now.
 * Run the demo with `python -m agent.test`.
 
@@ -448,7 +448,7 @@ What this does:
 POP includes a unified embedding interface:
 
 ```python
-from pop import Embedder
+from POP import Embedder
 
 embedder = Embedder(use_api="openai")
 vecs = embedder.get_embedding(["hello world"])
@@ -467,7 +467,7 @@ Large inputs are chunked automatically when needed.
 # 13. Web Snapshot Utility
 
 ```python
-from pop.utils.web_snapshot import get_text_snapshot
+from POP.utils.web_snapshot import get_text_snapshot
 
 text = get_text_snapshot("https://example.com", image_caption=True)
 print(text[:500])
@@ -485,7 +485,7 @@ Supports:
 # 14. Examples
 
 ```python
-from pop import PromptFunction
+from POP import PromptFunction
 
 pf = PromptFunction(prompt="Give me 3 creative names for a <<<thing>>>.")
 
@@ -496,7 +496,7 @@ print(pf.execute(thing="new language"))
 Multimodal example (provider must support images):
 
 ```python
-from pop import PromptFunction
+from POP import PromptFunction
 
 image_b64 = "..."  # base64-encoded image
 

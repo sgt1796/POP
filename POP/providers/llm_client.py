@@ -12,7 +12,7 @@ provider supports tool calling it should also populate
 
 Original POP placed all provider implementations in a single file.
 This module holds only the abstract base class; see the
-``pop/providers`` subpackage for concrete clients.
+``POP/providers`` subpackage for concrete clients.
 """
 
 from abc import ABC, abstractmethod

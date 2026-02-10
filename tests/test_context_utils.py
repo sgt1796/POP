@@ -1,12 +1,12 @@
 import pytest
 
-from pop.context import Context
-from pop.utils.event_stream import to_event_stream
-from pop.utils.json_parse import parse_json, get_value
-from pop.utils.validation import validate_not_empty, validate_json
-from pop.utils.sanitize_unicode import sanitize
-from pop.utils.overflow import truncate_messages
-from pop.utils.http_proxy import get_session_with_proxy
+from POP.context import Context
+from POP.utils.event_stream import to_event_stream
+from POP.utils.json_parse import parse_json, get_value
+from POP.utils.validation import validate_not_empty, validate_json
+from POP.utils.sanitize_unicode import sanitize
+from POP.utils.overflow import truncate_messages
+from POP.utils.http_proxy import get_session_with_proxy
 
 
 def test_context_append_and_to_messages():
