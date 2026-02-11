@@ -124,7 +124,6 @@ class Agent:
             print(f"[ initialize ] POP exception: {e}.")
             default_model = {"provider": "unknown", "id": "unknown", "api": None}
         
-        print(f"[ initialize ] default_model: {default_model}.")
         initial = AgentState(
             system_prompt="",
             model=default_model,

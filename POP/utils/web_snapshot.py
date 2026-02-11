@@ -67,11 +67,11 @@ def get_text_snapshot(
     target_selector = target_selector or []
     wait_for_selector = wait_for_selector or []
     exclude_selector = exclude_selector or []
-
-    headers = {}
-    api_key = 'Bearer ' + getenv("JINAAI_API_KEY") if use_api_key else None
-
-    header_values = {
+    
+    api_key = None
+    if use_api_key and getenv("JINAAI_API_KEY"):
+        api_key = 'Bearer ' + getenv("JINAAI_API_KEY", "")
+    headers = {
         "Authorization": api_key,
         "X-Return-Format": None if return_format == "default" else return_format,
         "X-Timeout": timeout if timeout > 0 else None,
@@ -85,10 +85,6 @@ def get_text_snapshot(
         "X-With-Generated-Alt": "true" if image_caption else None,
         "X-Set-Cookie": cookie if cookie else None,
     }
-
-    for key, value in header_values.items():
-        if value is not None:
-            headers[key] = value
 
     try:
         api_url = f"https://r.jina.ai/{web_url}"

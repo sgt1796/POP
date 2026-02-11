@@ -1,40 +1,12 @@
-import asyncio, time, os
+import asyncio
+import time
+
 from .agent import Agent
-from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
+from .agent_types import AgentMessage, TextContent
+from .tools import FastTool, SlowTool, WebSnapshotTool
 from POP.stream import stream
 
-class SlowTool(AgentTool):
-    name = "slow"
-    description = "Sleep a bit"
-    parameters = {"type": "object", "properties": {"seconds": {"type": "number"}}}
-    label = "Slow"
 
-    async def execute(self, tool_call_id, params, signal=None, on_update=None):
-        t0 = time.time()
-        seconds = float(params.get("seconds", 1.0))
-        steps = max(1, int(seconds * 10))
-        for _ in range(steps):
-            if signal and signal.is_set():
-                break
-            await asyncio.sleep(0.1)
-        return AgentToolResult(
-            content=[TextContent(type="text", text=f"slow done {seconds}s")],
-            details={"time_elapsed": time.time() - t0},
-        )
-
-class FastTool(AgentTool):
-    name = "fast"
-    description = "Return quickly"
-    parameters = {"type": "object", "properties": {}}
-    label = "Fast"
-
-    async def execute(self, tool_call_id, params, signal=None, on_update=None):
-        return AgentToolResult(
-            content=[TextContent(type="text", text="fast done")],
-            details={},
-        )
-
-    
 # Logging helpers
 LOG_LEVELS = {
     "quiet": 0,
@@ -123,34 +95,39 @@ def print_state(agent):
 
 async def main():
     agent = Agent({"stream_fn": stream})
-    agent.set_model({"provider": "gemini", "id": "gemini-3-flash-preview", "api": None})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-pro-preview", "api": None})
     #agent.set_model({"provider": "openai", "id": "gpt-5-mini", "api": None})
-    agent.set_tools([SlowTool(), FastTool()])
+    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool()])
 
-    log_level = "messages"
+    log_level = "stream"
     unsubscribe_log = agent.subscribe(make_event_logger(log_level))
     #unsubscribe_log()
 
+    # agent.follow_up(AgentMessage(
+    #     role="user",
+    #     content=[TextContent(type="text", text="follow up: summarize")],
+    #     timestamp=time.time(),
+    # ))
     agent.follow_up(AgentMessage(
         role="user",
-        content=[TextContent(type="text", text="follow up: summarize")],
+        content=[TextContent(type="text", text="eventually, show me https://agentskills.io/home, remove images and put links at the end")],
         timestamp=time.time(),
     ))
 
     task = asyncio.create_task(agent.prompt("Call tool slow with seconds=1.2, then call tool fast"))
-    agent.set_timeout(120)  # Set a timeout of 10 seconds for the agent's operations
+    agent.set_timeout(120)  # Set a timeout of 120 seconds for the agent's operations
 
-    ##await asyncio.sleep(5)
-    agent.steer(AgentMessage(
-        role="user",
-        content=[TextContent(type="text", text="steer: actually, call slow 4 times, and in between of each call add a fast call, but keep the total time unchanged as 1.2s. then fast")],
-        timestamp=time.time(),
-    ))
+    ##await asyncio.sleep(5)    
+    # agent.steer(AgentMessage(
+    #     role="user",
+    #     content=[TextContent(type="text", text="steer: actually, call slow 4 times, and in between of each call add a fast call, but keep the total time unchanged as 1.2s. then fast")],
+    #     timestamp=time.time(),
+    # ))
     await task
-    print_state(agent)
+    #print_state(agent)
 
-    print("Final message roles:")
-    print([m.role for m in agent.state.messages])
+    #print("Final message roles:")
+    #print([m.role for m in agent.state.messages])
 
 
 
