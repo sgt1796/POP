@@ -2,6 +2,7 @@ import asyncio, time, os
 from .agent import Agent
 from .agent_types import AgentMessage, TextContent, AgentToolResult, AgentTool
 from POP.stream import stream
+from POP.utils import web_snapshot as websnapshot
 
 class SlowTool(AgentTool):
     name = "slow"
@@ -32,6 +33,66 @@ class FastTool(AgentTool):
         return AgentToolResult(
             content=[TextContent(type="text", text="fast done")],
             details={},
+        )
+
+
+class WebSnapshotTool(AgentTool):
+    name = "websnapshot"
+    description = "Fetch a text snapshot of a webpage using POP.utils.websnapshot"
+    parameters = {
+        "type": "object",
+        "properties": {
+            "web_url": {"type": "string", "description": "URL to snapshot"},
+            "url": {"type": "string", "description": "Alias for web_url"},
+            "use_api_key": {"type": "boolean"},
+            "return_format": {"type": "string"},
+            "timeout": {"type": "number"},
+            "target_selector": {"type": "array", "items": {"type": "string"}},
+            "wait_for_selector": {"type": "array", "items": {"type": "string"}},
+            "exclude_selector": {"type": "array", "items": {"type": "string"}},
+            "remove_image": {"type": "boolean"},
+            "links_at_end": {"type": "boolean"},
+            "images_at_end": {"type": "boolean"},
+            "json_response": {"type": "boolean"},
+            "image_caption": {"type": "boolean", "description": "Caption images in the snapshot using AI. Note: this may consume additional tokens and time."},
+            "cookie": {"type": "string"},
+        },
+        "required": ["web_url"],
+    }
+    label = "Web Snapshot"
+
+    async def execute(self, tool_call_id, params, signal=None, on_update=None):
+        web_url = params.get("web_url") or params.get("url")
+        if not web_url:
+            return AgentToolResult(
+                content=[TextContent(type="text", text="websnapshot error: missing web_url")],
+                details={"error": "missing web_url"},
+            )
+
+        kwargs = {
+            "use_api_key": bool(params.get("use_api_key", True)),
+            "return_format": params.get("return_format", "default"),
+            "timeout": int(params.get("timeout", 0) or 0),
+            "target_selector": params.get("target_selector") or None,
+            "wait_for_selector": params.get("wait_for_selector") or None,
+            "exclude_selector": params.get("exclude_selector") or None,
+            "remove_image": bool(params.get("remove_image", False)),
+            "links_at_end": bool(params.get("links_at_end", False)),
+            "images_at_end": bool(params.get("images_at_end", False)),
+            "json_response": bool(params.get("json_response", False)),
+            "image_caption": bool(params.get("image_caption", False)),
+            "cookie": params.get("cookie"),
+        }
+        try:
+            snapshot = websnapshot.get_text_snapshot(web_url=web_url, **kwargs)
+        except Exception as exc:
+            return AgentToolResult(
+                content=[TextContent(type="text", text=f"websnapshot error: {exc}")],
+                details={"error": str(exc)},
+            )
+        return AgentToolResult(
+            content=[TextContent(type="text", text=snapshot)],
+            details={"url": web_url},
         )
 
     
@@ -123,34 +184,39 @@ def print_state(agent):
 
 async def main():
     agent = Agent({"stream_fn": stream})
-    agent.set_model({"provider": "gemini", "id": "gemini-3-flash-preview", "api": None})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-pro-preview", "api": None})
     #agent.set_model({"provider": "openai", "id": "gpt-5-mini", "api": None})
-    agent.set_tools([SlowTool(), FastTool()])
+    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool()])
 
-    log_level = "messages"
+    log_level = "stream"
     unsubscribe_log = agent.subscribe(make_event_logger(log_level))
     #unsubscribe_log()
 
+    # agent.follow_up(AgentMessage(
+    #     role="user",
+    #     content=[TextContent(type="text", text="follow up: summarize")],
+    #     timestamp=time.time(),
+    # ))
     agent.follow_up(AgentMessage(
         role="user",
-        content=[TextContent(type="text", text="follow up: summarize")],
+        content=[TextContent(type="text", text="eventually, show me https://agentskills.io/home, remove images and put links at the end")],
         timestamp=time.time(),
     ))
 
     task = asyncio.create_task(agent.prompt("Call tool slow with seconds=1.2, then call tool fast"))
-    agent.set_timeout(120)  # Set a timeout of 10 seconds for the agent's operations
+    agent.set_timeout(120)  # Set a timeout of 120 seconds for the agent's operations
 
-    ##await asyncio.sleep(5)
-    agent.steer(AgentMessage(
-        role="user",
-        content=[TextContent(type="text", text="steer: actually, call slow 4 times, and in between of each call add a fast call, but keep the total time unchanged as 1.2s. then fast")],
-        timestamp=time.time(),
-    ))
+    ##await asyncio.sleep(5)    
+    # agent.steer(AgentMessage(
+    #     role="user",
+    #     content=[TextContent(type="text", text="steer: actually, call slow 4 times, and in between of each call add a fast call, but keep the total time unchanged as 1.2s. then fast")],
+    #     timestamp=time.time(),
+    # ))
     await task
-    print_state(agent)
+    #print_state(agent)
 
-    print("Final message roles:")
-    print([m.role for m in agent.state.messages])
+    #print("Final message roles:")
+    #print([m.role for m in agent.state.messages])
 
 
 
