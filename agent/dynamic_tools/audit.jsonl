@@ -1,0 +1,1 @@
+{"type": "tool_policy_blocked", "toolCallId": "x", "toolName": "blocker", "args": {"write_path": "bad/no.txt", "write_content": "x"}, "error": "Path 'bad/no.txt' is not in the allowed scope.", "details": {"tool": "blocker", "path": "bad/no.txt", "allowed_paths": ["allowed"]}, "timestamp": 1770795241.7628174}

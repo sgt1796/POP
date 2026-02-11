@@ -47,6 +47,7 @@ from .agent_types import (
     ThinkingContent,
     ToolCallContent,
 )
+from .dynamic_tools.registry import append_audit_event
 
 # Attempt to import POP for the default LLM transport.  If
 # unavailable the user must supply their own `stream_fn`.
@@ -904,6 +905,20 @@ async def _execute_tool_calls(
         except Exception as exc:
             # Convert error into a tool result
             is_error = True
+            if getattr(exc, "policy_blocked", False):
+                blocked_event = {
+                    "type": "tool_policy_blocked",
+                    "toolCallId": tool_call.id,
+                    "toolName": tool_call.name,
+                    "args": tool_call.arguments,
+                    "error": str(exc),
+                    "details": getattr(exc, "details", {}),
+                }
+                stream.push(blocked_event)
+                try:
+                    append_audit_event(blocked_event)
+                except Exception:
+                    pass
             result = AgentToolResult(
                 content=[TextContent(type="text", text=str(exc))],
                 details={},
