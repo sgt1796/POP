@@ -47,7 +47,7 @@ from .agent_types import (
     ThinkingContent,
     ToolCallContent,
 )
-from .dynamic_tools.registry import append_audit_event
+from .toolsmaker.registry import append_audit_event
 
 # Attempt to import POP for the default LLM transport.  If
 # unavailable the user must supply their own `stream_fn`.

@@ -30,10 +30,10 @@ from .agent_types import (
     TextContent,
     ImageContent,
 )
-from .dynamic_tools.registry import (
-    DynamicToolRegistry,
+from .toolsmaker.registry import (
+    ToolsmakerRegistry,
     DEFAULT_AUDIT_PATH,
-    DEFAULT_DYNAMIC_TOOLS_DIR,
+    DEFAULT_TOOLSMAKER_DIR,
     set_default_audit_path,
 )
 
@@ -130,7 +130,7 @@ class Agent:
             POP.get_client("gemini", "gemini-2.5-flash-lite-preview-06-17")  # type: ignore
             default_model = {"provider": "gemini", "id": "gemini-2.5-flash-lite", "api": None}  # type: ignore
         except Exception as e:
-            print(f"[ initialize ] POP exception: {e}.")
+            print(f"[ initializing ] POP exception: {e}.")
             default_model = {"provider": "unknown", "id": "unknown", "api": None}
         
         initial = AgentState(
@@ -152,15 +152,15 @@ class Agent:
         # Event listeners
         self._listeners: set[Callable[[AgentEvent], None]] = set()
         # Registry-backed tool lifecycle (static + dynamic)
-        dynamic_tools_dir = opts.get("dynamic_tools_dir", DEFAULT_DYNAMIC_TOOLS_DIR)
-        dynamic_audit_path = opts.get("dynamic_tools_audit_path", DEFAULT_AUDIT_PATH)
+        toolsmaker_dir = opts.get("toolsmaker_dir", DEFAULT_TOOLSMAKER_DIR)
+        toolsmaker_audit_path = opts.get("toolsmaker_audit_path", DEFAULT_AUDIT_PATH)
         project_root = opts.get("project_root", os.getcwd())
-        set_default_audit_path(dynamic_audit_path)
-        self._tool_registry = DynamicToolRegistry(
-            base_dir=dynamic_tools_dir,
+        set_default_audit_path(toolsmaker_audit_path)
+        self._tool_registry = ToolsmakerRegistry(
+            base_dir=toolsmaker_dir,
             project_root=project_root,
             event_sink=self._emit,
-            audit_path=dynamic_audit_path,
+            audit_path=toolsmaker_audit_path,
         )
         self._tool_registry.replace_static_tools(self._state.tools)
         self._state.tools = self._tool_registry.snapshot_tools()

@@ -6,7 +6,7 @@ import os
 from typing import Any
 
 from agent.agent_types import AgentTool, ToolSpec
-from agent.dynamic_tools.policy import ToolPolicyEnforcer
+from agent.toolsmaker.policy import ToolPolicyEnforcer
 
 
 class ToolLoader:
@@ -17,7 +17,7 @@ class ToolLoader:
             raise FileNotFoundError(f"Generated tool file not found: {code_path}")
 
         token = hashlib.md5(f"{code_path}:{spec.version}".encode("utf-8")).hexdigest()[:10]
-        module_name = f"agent_dynamic_{spec.name}_v{spec.version}_{token}"
+        module_name = f"agent_toolsmaker_{spec.name}_v{spec.version}_{token}"
         module_spec = importlib.util.spec_from_file_location(module_name, code_path)
         if module_spec is None or module_spec.loader is None:
             raise RuntimeError(f"Unable to load module spec from {code_path}")

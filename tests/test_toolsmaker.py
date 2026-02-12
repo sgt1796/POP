@@ -10,8 +10,8 @@ import pytest
 from agent import Agent
 from agent.agent_loop import _execute_tool_calls
 from agent.agent_types import ToolBuildRequest, ToolCallContent
-from agent.dynamic_tools.policy import ToolPolicyViolation
-from agent.dynamic_tools.registry import DynamicToolRegistry
+from agent.toolsmaker.policy import ToolPolicyViolation
+from agent.toolsmaker.registry import ToolsmakerRegistry
 from agent.tools import FastTool, SlowTool, WebSnapshotTool
 
 
@@ -66,10 +66,10 @@ async def _dummy_stream_fn(model: Dict[str, Any], context: Dict[str, Any], optio
 
 
 def test_generated_tool_activation_requires_approval(tmp_path: Path):
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "dynamic"),
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
         project_root=str(tmp_path),
-        audit_path=str(tmp_path / "dynamic" / "audit.jsonl"),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
     )
     request = _request(
         "file_helper",
@@ -90,17 +90,17 @@ def test_generated_tool_activation_requires_approval(tmp_path: Path):
 
 
 def test_forbidden_import_is_rejected_before_approval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "dynamic"),
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
         project_root=str(tmp_path),
-        audit_path=str(tmp_path / "dynamic" / "audit.jsonl"),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
     )
     monkeypatch.setattr(
         registry._builder,  # type: ignore[attr-defined]
         "render_code",
         lambda spec, request: (
             "import subprocess\n"
-            "from agent.dynamic_tools.policy import GeneratedToolBase\n"
+            "from agent.toolsmaker.policy import GeneratedToolBase\n"
             "class GeneratedTool(GeneratedToolBase):\n"
             "    pass\n"
         ),
@@ -115,10 +115,10 @@ def test_forbidden_import_is_rejected_before_approval(tmp_path: Path, monkeypatc
 
 
 def test_policy_blocks_path_outside_allowlist(tmp_path: Path):
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "dynamic"),
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
         project_root=str(tmp_path),
-        audit_path=str(tmp_path / "dynamic" / "audit.jsonl"),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
     )
     request = _request(
         "writer_tool",
@@ -148,10 +148,10 @@ def test_policy_blocks_path_outside_allowlist(tmp_path: Path):
 
 
 def test_policy_blocks_non_whitelisted_domain(tmp_path: Path):
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "dynamic"),
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
         project_root=str(tmp_path),
-        audit_path=str(tmp_path / "dynamic" / "audit.jsonl"),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
     )
     request = _request(
         "http_tool",
@@ -168,10 +168,10 @@ def test_policy_blocks_non_whitelisted_domain(tmp_path: Path):
 
 
 def test_tool_timeout_is_enforced(tmp_path: Path):
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "dynamic"),
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
         project_root=str(tmp_path),
-        audit_path=str(tmp_path / "dynamic" / "audit.jsonl"),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
     )
     request = _request("slow_generated", "Delay tool", timeout_s=0.05)
     build = registry.build_tool(request)
@@ -183,10 +183,10 @@ def test_tool_timeout_is_enforced(tmp_path: Path):
 
 
 def test_registry_hot_activation_and_listing(tmp_path: Path):
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "dynamic"),
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
         project_root=str(tmp_path),
-        audit_path=str(tmp_path / "dynamic" / "audit.jsonl"),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
     )
     request_v1 = _request("hot_tool", "v1 writer", capabilities=["fs_write"], allowed_paths=["allowed"])
     build_v1 = registry.build_tool(request_v1)
@@ -209,8 +209,8 @@ def test_static_tools_remain_compatible(tmp_path: Path):
     agent = Agent(
         {
             "stream_fn": _dummy_stream_fn,
-            "dynamic_tools_dir": str(tmp_path / "dynamic"),
-            "dynamic_tools_audit_path": str(tmp_path / "dynamic" / "audit.jsonl"),
+            "toolsmaker_dir": str(tmp_path / "toolsmaker"),
+            "toolsmaker_audit_path": str(tmp_path / "toolsmaker" / "audit.jsonl"),
             "project_root": str(tmp_path),
         }
     )
@@ -225,9 +225,9 @@ def test_static_tools_remain_compatible(tmp_path: Path):
 
 def test_audit_events_and_policy_blocked_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
-    audit_path = tmp_path / "agent" / "dynamic_tools" / "audit.jsonl"
-    registry = DynamicToolRegistry(
-        base_dir=str(tmp_path / "agent" / "dynamic_tools"),
+    audit_path = tmp_path / "agent" / "toolsmaker" / "audit.jsonl"
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "agent" / "toolsmaker"),
         project_root=str(tmp_path),
         audit_path=str(audit_path),
     )

@@ -177,7 +177,7 @@ class ToolBuilder:
 from typing import Any, Dict, Optional
 
 from agent.agent_types import AgentToolResult, TextContent
-from agent.dynamic_tools.policy import GeneratedToolBase
+from agent.toolsmaker.policy import GeneratedToolBase
 
 
 class GeneratedTool(GeneratedToolBase):

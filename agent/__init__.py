@@ -36,7 +36,7 @@ from .agent_types import (
     ToolBuildRequest,
     ToolBuildResult,
 )
-from .dynamic_tools.registry import DynamicToolRegistry
+from .toolsmaker.registry import ToolsmakerRegistry
 
 __all__ = [
     "Agent",
@@ -55,5 +55,5 @@ __all__ = [
     "ToolSpec",
     "ToolBuildRequest",
     "ToolBuildResult",
-    "DynamicToolRegistry",
+    "ToolsmakerRegistry",
 ]

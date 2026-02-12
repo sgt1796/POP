@@ -8,19 +8,19 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from agent.agent_types import AgentTool, ToolBuildRequest, ToolBuildResult, ToolPolicy, ToolSpec
-from agent.dynamic_tools.approvals import ApprovalStateMachine, write_review_artifact
-from agent.dynamic_tools.builder import ToolBuilder, sanitize_tool_name
-from agent.dynamic_tools.loader import ToolLoader
-from agent.dynamic_tools.policy import PolicyGuardedTool, ToolPolicyEnforcer
-from agent.dynamic_tools.validator import validate_generated_code, validate_tool_spec
+from agent.toolsmaker.approvals import ApprovalStateMachine, write_review_artifact
+from agent.toolsmaker.builder import ToolBuilder, sanitize_tool_name
+from agent.toolsmaker.loader import ToolLoader
+from agent.toolsmaker.policy import PolicyGuardedTool, ToolPolicyEnforcer
+from agent.toolsmaker.validator import validate_generated_code, validate_tool_spec
 
 
-DEFAULT_DYNAMIC_TOOLS_DIR = os.path.join("agent", "dynamic_tools")
-DEFAULT_SPECS_DIR = os.path.join(DEFAULT_DYNAMIC_TOOLS_DIR, "specs")
-DEFAULT_GENERATED_DIR = os.path.join(DEFAULT_DYNAMIC_TOOLS_DIR, "generated")
-DEFAULT_REVIEWS_DIR = os.path.join(DEFAULT_DYNAMIC_TOOLS_DIR, "reviews")
-DEFAULT_AUDIT_PATH = os.path.join(DEFAULT_DYNAMIC_TOOLS_DIR, "audit.jsonl")
-DEFAULT_ACTIVE_STATE = os.path.join(DEFAULT_DYNAMIC_TOOLS_DIR, "active_versions.json")
+DEFAULT_TOOLSMAKER_DIR = os.path.join("agent", "toolsmaker")
+DEFAULT_SPECS_DIR = os.path.join(DEFAULT_TOOLSMAKER_DIR, "specs")
+DEFAULT_GENERATED_DIR = os.path.join(DEFAULT_TOOLSMAKER_DIR, "generated")
+DEFAULT_REVIEWS_DIR = os.path.join(DEFAULT_TOOLSMAKER_DIR, "reviews")
+DEFAULT_AUDIT_PATH = os.path.join(DEFAULT_TOOLSMAKER_DIR, "audit.jsonl")
+DEFAULT_ACTIVE_STATE = os.path.join(DEFAULT_TOOLSMAKER_DIR, "active_versions.json")
 _DEFAULT_AUDIT_PATH_OVERRIDE: Optional[str] = None
 
 AUDITABLE_EVENTS = {
@@ -60,12 +60,12 @@ class DynamicToolRecord:
     active_tool: Optional[AgentTool] = None
 
 
-class DynamicToolRegistry:
+class ToolsmakerRegistry:
     """Registry for static and generated tools with approval workflow."""
 
     def __init__(
         self,
-        base_dir: str = DEFAULT_DYNAMIC_TOOLS_DIR,
+        base_dir: str = DEFAULT_TOOLSMAKER_DIR,
         project_root: Optional[str] = None,
         event_sink: Optional[Callable[[Dict[str, Any]], None]] = None,
         audit_path: str = DEFAULT_AUDIT_PATH,
