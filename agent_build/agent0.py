@@ -21,7 +21,37 @@ LOG_LEVELS = {
     "debug": 3,
 }
 
-USER_PROMPT_MARKER = "Current user message:\n"
+USER_PROMPT_MARKER = "|Current user message|:\n"
+DEFAULT_TOOLSMAKER_ALLOWED_CAPS = "fs_read,fs_write,http"
+TOOL_CAPABILITIES = {"fs_read", "fs_write", "http", "secrets"}
+
+
+def _parse_toolsmaker_allowed_capabilities(value: Optional[str]) -> List[str]:
+    raw = str(value if value is not None else DEFAULT_TOOLSMAKER_ALLOWED_CAPS)
+    caps: List[str] = []
+    seen = set()
+    for item in raw.split(","):
+        cap = item.strip()
+        if not cap or cap in seen:
+            continue
+        if cap in TOOL_CAPABILITIES:
+            caps.append(cap)
+            seen.add(cap)
+    if not caps:
+        return ["fs_read", "fs_write", "http"]
+    return caps
+
+
+def _parse_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    key = str(value).strip().lower()
+    if key in {"1", "true", "yes", "y", "on"}:
+        return True
+    if key in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def _resolve_log_level(value: str) -> int:
@@ -71,7 +101,13 @@ def _format_message_line(message: Any) -> str:
 
 
 def make_event_logger(level: str = "quiet"):
-    """Create an event logger function for agent events."""
+    """Create an event logger function for agent events.
+    Levels:
+    - quiet: no logging
+    - messages: log completed messages
+    - stream: log message updates/streams
+    - debug: log all events
+    """
     level_value = _resolve_log_level(level)
 
     def log(event: Dict[str, Any]) -> None:
@@ -266,9 +302,9 @@ class MemoryRetriever:
 def _format_memory_sections(short_hits: List[str], long_hits: List[str]) -> str:
     sections: List[str] = []
     if short_hits:
-        sections.append("Short-term memory:\n" + "\n".join(f"- {x}" for x in short_hits))
+        sections.append("|Short-term memory|:\n" + "\n".join(f"- {x}" for x in short_hits))
     if long_hits:
-        sections.append("Long-term memory:\n" + "\n".join(f"- {x}" for x in long_hits))
+        sections.append("|Long-term memory|:\n" + "\n".join(f"- {x}" for x in long_hits))
     if not sections:
         return "(no relevant memories)"
     return "\n\n".join(sections)
@@ -415,17 +451,431 @@ class MemorySearchTool(AgentTool):
         )
 
 
+class ToolsmakerTool(AgentTool):
+    name = "toolsmaker"
+    description = "Manage generated tools via create, approve, activate, reject, or list actions."
+    parameters = {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["create", "approve", "activate", "reject", "list"],
+                "description": "Lifecycle action to run",
+            },
+            "intent": {
+                "type": "object",
+                "description": "Structured tool intent payload used by action=create",
+            },
+            "name": {
+                "type": "string",
+                "description": "Tool name used by approve/activate/reject",
+            },
+            "version": {
+                "type": "integer",
+                "description": "Tool version used by approve/activate/reject",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Optional rejection reason for action=reject",
+            },
+            "max_output_chars": {
+                "type": "integer",
+                "description": "Optional output cap used by action=activate",
+            },
+        },
+        "required": ["action"],
+    }
+    label = "Toolsmaker"
+
+    def __init__(self, agent: Agent, allowed_capabilities: Sequence[str]) -> None:
+        self.agent = agent
+        self.allowed_capabilities = [str(x) for x in allowed_capabilities if x in TOOL_CAPABILITIES]
+
+    @staticmethod
+    def _error(text: str, details: Dict[str, Any]) -> AgentToolResult:
+        return AgentToolResult(
+            content=[TextContent(type="text", text=text)],
+            details={"ok": False, **details},
+        )
+
+    @staticmethod
+    def _ok(text: str, details: Dict[str, Any]) -> AgentToolResult:
+        return AgentToolResult(
+            content=[TextContent(type="text", text=text)],
+            details={"ok": True, **details},
+        )
+
+    @staticmethod
+    def _result_summary(status: str, name: str, version: int, review_path: str = "") -> str:
+        lines = [f"tool={name}", f"version={version}", f"status={status}"]
+        if review_path:
+            lines.append(f"review_path={review_path}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _parse_name_version(params: Dict[str, Any]) -> Tuple[str, int]:
+        name = str(params.get("name", "")).strip()
+        if not name:
+            raise ValueError("missing required field: name")
+        version_raw = params.get("version", None)
+        if version_raw is None:
+            raise ValueError("missing required field: version")
+        try:
+            version = int(version_raw)
+        except Exception as exc:
+            raise ValueError("version must be an integer") from exc
+        if version <= 0:
+            raise ValueError("version must be > 0")
+        return name, version
+
+    @staticmethod
+    def _infer_required_capabilities(intent: Dict[str, Any]) -> List[str]:
+        name_text = str(intent.get("name", "")).strip().lower()
+        purpose_text = str(intent.get("purpose", "")).strip().lower()
+        text = f"{name_text} {purpose_text}"
+        required: List[str] = []
+        if any(token in text for token in ["write", "writer", "save", "append"]):
+            required.append("fs_write")
+        if any(token in text for token in ["read", "reader", "load"]):
+            required.append("fs_read")
+        if any(token in text for token in ["http", "url", "fetch", "request", "download"]):
+            required.append("http")
+        if any(token in text for token in ["secret", "token", "password", "api key", "env"]):
+            required.append("secrets")
+        return sorted(set(required))
+
+    def _validate_intent_contract(self, intent: Dict[str, Any]) -> Optional[AgentToolResult]:
+        raw_caps = intent.get("capabilities", [])
+        if raw_caps is None:
+            raw_caps = []
+        if not isinstance(raw_caps, list):
+            return self._error(
+                "toolsmaker create error: intent.capabilities must be an array.",
+                {"action": "create", "error": "invalid_capabilities"},
+            )
+
+        requested = sorted({str(x).strip() for x in raw_caps if str(x).strip()})
+        if not requested:
+            inferred = self._infer_required_capabilities(intent)
+            return self._error(
+                "toolsmaker create blocked: intent.capabilities is empty; this would generate a no-op tool.",
+                {
+                    "action": "create",
+                    "error": "missing_capabilities",
+                    "requested": requested,
+                    "inferred_required": inferred,
+                    "hint": "Include capabilities such as fs_write/fs_read/http/secrets in the intent.",
+                },
+            )
+
+        inferred_required = self._infer_required_capabilities(intent)
+        missing = sorted(set(inferred_required) - set(requested))
+        if missing:
+            return self._error(
+                "toolsmaker create blocked: intent likely needs capabilities that are missing.",
+                {
+                    "action": "create",
+                    "error": "inferred_capabilities_missing",
+                    "requested": requested,
+                    "inferred_required": inferred_required,
+                    "missing": missing,
+                },
+            )
+
+        if "fs_write" in requested and not list(intent.get("allowed_paths") or []):
+            return self._error(
+                "toolsmaker create blocked: fs_write requires allowed_paths in intent.",
+                {
+                    "action": "create",
+                    "error": "missing_allowed_paths",
+                    "requested": requested,
+                },
+            )
+        if "fs_read" in requested and not list(intent.get("allowed_paths") or []):
+            return self._error(
+                "toolsmaker create blocked: fs_read requires allowed_paths in intent.",
+                {
+                    "action": "create",
+                    "error": "missing_allowed_paths",
+                    "requested": requested,
+                },
+            )
+        if "http" in requested and not list(intent.get("allowed_domains") or []):
+            return self._error(
+                "toolsmaker create blocked: http requires allowed_domains in intent.",
+                {
+                    "action": "create",
+                    "error": "missing_allowed_domains",
+                    "requested": requested,
+                },
+            )
+        return None
+
+    def _check_capability_guard(self, intent: Dict[str, Any]) -> Optional[AgentToolResult]:
+        raw_caps = intent.get("capabilities", [])
+        if raw_caps is None:
+            raw_caps = []
+        if not isinstance(raw_caps, list):
+            return self._error(
+                "toolsmaker create error: intent.capabilities must be an array.",
+                {"action": "create", "error": "invalid capabilities"},
+            )
+
+        requested = sorted({str(x).strip() for x in raw_caps if str(x).strip()})
+        allowed = sorted(set(self.allowed_capabilities))
+        disallowed = sorted(set(requested) - set(allowed))
+        if disallowed:
+            return self._error(
+                "toolsmaker create blocked: requested capabilities are not allowed by current runtime policy.",
+                {
+                    "action": "create",
+                    "error": "capability_not_allowed",
+                    "requested": requested,
+                    "allowed": allowed,
+                    "disallowed": disallowed,
+                    "hint": "Set POP_AGENT_TOOLSMAKER_ALLOWED_CAPS to include the required capabilities.",
+                },
+            )
+        return None
+
+    def _handle_create(self, params: Dict[str, Any]) -> AgentToolResult:
+        intent = params.get("intent", None)
+        if not isinstance(intent, dict):
+            return self._error(
+                "toolsmaker create error: missing or invalid intent object.",
+                {"action": "create", "error": "missing_intent"},
+            )
+
+        invalid = self._validate_intent_contract(intent)
+        if invalid is not None:
+            return invalid
+
+        blocked = self._check_capability_guard(intent)
+        if blocked is not None:
+            return blocked
+
+        result = self.agent.build_dynamic_tool_from_intent(intent)
+        next_steps = "Next steps: approve this version, then activate it."
+        text = "\n".join(
+            [
+                self._result_summary(
+                    status=str(result.status),
+                    name=result.spec.name,
+                    version=result.spec.version,
+                    review_path=result.review_path,
+                ),
+                next_steps,
+            ]
+        )
+        return self._ok(
+            text,
+            {
+                "action": "create",
+                "status": result.status,
+                "name": result.spec.name,
+                "version": result.spec.version,
+                "review_path": result.review_path,
+                "spec_path": result.spec_path,
+                "code_path": result.code_path,
+                "validation": result.validation,
+                "requested_capabilities": list(intent.get("capabilities") or []),
+                "requested_allowed_paths": list(intent.get("allowed_paths") or []),
+                "requested_allowed_domains": list(intent.get("allowed_domains") or []),
+                "next_steps": ["approve", "activate"],
+            },
+        )
+
+    def _handle_approve(self, params: Dict[str, Any]) -> AgentToolResult:
+        name, version = self._parse_name_version(params)
+        result = self.agent.approve_dynamic_tool(name=name, version=version)
+        text = self._result_summary(status=str(result.status), name=result.spec.name, version=result.spec.version)
+        return self._ok(
+            text,
+            {
+                "action": "approve",
+                "status": result.status,
+                "name": result.spec.name,
+                "version": result.spec.version,
+                "review_path": result.review_path,
+                "validation": result.validation,
+            },
+        )
+
+    def _handle_activate(self, params: Dict[str, Any]) -> AgentToolResult:
+        name, version = self._parse_name_version(params)
+        try:
+            max_output_chars = int(params.get("max_output_chars", 20_000) or 20_000)
+        except Exception as exc:
+            raise ValueError("max_output_chars must be an integer") from exc
+        max_output_chars = max(1, max_output_chars)
+
+        tool = self.agent.activate_tool_version(name=name, version=version, max_output_chars=max_output_chars)
+        tools = self.agent.list_tools()
+        text = "\n".join(
+            [
+                f"activated={tool.name}",
+                f"version={version}",
+                "available_tools=" + ", ".join(tools),
+            ]
+        )
+        return self._ok(
+            text,
+            {
+                "action": "activate",
+                "status": "activated",
+                "name": name,
+                "version": version,
+                "activated_tool": tool.name,
+                "max_output_chars": max_output_chars,
+                "tools": tools,
+            },
+        )
+
+    def _handle_reject(self, params: Dict[str, Any]) -> AgentToolResult:
+        name, version = self._parse_name_version(params)
+        reason = str(params.get("reason", "rejected_by_reviewer")).strip() or "rejected_by_reviewer"
+        result = self.agent.reject_dynamic_tool(name=name, version=version, reason=reason)
+        text = self._result_summary(status=str(result.status), name=result.spec.name, version=result.spec.version)
+        return self._ok(
+            text,
+            {
+                "action": "reject",
+                "status": result.status,
+                "name": result.spec.name,
+                "version": result.spec.version,
+                "reason": reason,
+            },
+        )
+
+    def _handle_list(self) -> AgentToolResult:
+        tools = self.agent.list_tools()
+        if tools:
+            text = "tools:\n" + "\n".join(f"{i + 1}. {name}" for i, name in enumerate(tools))
+        else:
+            text = "tools: (none)"
+        return self._ok(text, {"action": "list", "tools": tools, "count": len(tools)})
+
+    async def execute(
+        self,
+        tool_call_id: str,
+        params: Dict[str, Any],
+        signal: Optional[Any] = None,
+        on_update: Optional[Any] = None,
+    ) -> AgentToolResult:
+        del tool_call_id, signal, on_update
+        action = str(params.get("action", "")).strip().lower()
+        if action not in {"create", "approve", "activate", "reject", "list"}:
+            return self._error(
+                "toolsmaker error: action must be one of create|approve|activate|reject|list.",
+                {"action": action or None, "error": "invalid_action"},
+            )
+        try:
+            if action == "create":
+                return self._handle_create(params)
+            if action == "approve":
+                return self._handle_approve(params)
+            if action == "activate":
+                return self._handle_activate(params)
+            if action == "reject":
+                return self._handle_reject(params)
+            return self._handle_list()
+        except Exception as exc:
+            return self._error(
+                f"toolsmaker {action} error: {exc}",
+                {"action": action, "error": str(exc)},
+            )
+
+
+class ToolsmakerApprovalSubscriber:
+    """Prompt the terminal user for tool approval after toolsmaker create calls."""
+
+    def __init__(self, agent: Agent, auto_activate_default: bool = True) -> None:
+        self.agent = agent
+        self.auto_activate_default = auto_activate_default
+        self._handled: set[Tuple[str, int]] = set()
+
+    def _read_details(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if event.get("type") != "tool_execution_end":
+            return None
+        if str(event.get("toolName", "")).strip() != "toolsmaker":
+            return None
+        result = event.get("result")
+        details = getattr(result, "details", None)
+        if not isinstance(details, dict):
+            return None
+        if not bool(details.get("ok")):
+            return None
+        if str(details.get("action", "")).strip().lower() != "create":
+            return None
+        if str(details.get("status", "")).strip().lower() != "approval_required":
+            return None
+        return details
+
+    def on_event(self, event: Dict[str, Any]) -> None:
+        try:
+            details = self._read_details(event)
+            if details is None:
+                return
+            name = str(details.get("name", "")).strip()
+            version = int(details.get("version", 0) or 0)
+            if not name or version <= 0:
+                return
+
+            key = (name, version)
+            if key in self._handled:
+                return
+            self._handled.add(key)
+
+            review_path = str(details.get("review_path", "")).strip()
+            print("\n[toolsmaker] Manual approval requested.")
+            print(f"[toolsmaker] tool={name} version={version}")
+            if review_path:
+                print(f"[toolsmaker] review={review_path}")
+            requested_capabilities = list(details.get("requested_capabilities") or [])
+            if requested_capabilities:
+                print(f"[toolsmaker] requested_capabilities={requested_capabilities}")
+            else:
+                print("[toolsmaker] requested_capabilities=(none)")
+
+            decision = input("[toolsmaker] Approve this tool version? [y/N]: ").strip().lower()
+            if decision in {"y", "yes"}:
+                approved = self.agent.approve_dynamic_tool(name=name, version=version)
+                print(f"[toolsmaker] approved status={approved.status}")
+
+                if self.auto_activate_default:
+                    activation_prompt = "[toolsmaker] Activate now? [Y/n]: "
+                else:
+                    activation_prompt = "[toolsmaker] Activate now? [y/N]: "
+                activate_choice = input(activation_prompt).strip().lower()
+                should_activate = activate_choice in {"y", "yes"} or (activate_choice == "" and self.auto_activate_default)
+                if should_activate:
+                    activated_tool = self.agent.activate_tool_version(name=name, version=version)
+                    print(f"[toolsmaker] activated tool={activated_tool.name} version={version}")
+                else:
+                    print("[toolsmaker] activation skipped")
+            else:
+                reason = input("[toolsmaker] Reject reason (enter for default): ").strip() or "rejected_by_reviewer"
+                rejected = self.agent.reject_dynamic_tool(name=name, version=version, reason=reason)
+                print(f"[toolsmaker] rejected status={rejected.status} reason={reason}")
+        except Exception as exc:
+            print(f"[toolsmaker] manual approval warning: {exc}")
+
+
 async def _read_input(prompt: str) -> str:
     return input(prompt)
 
 
 async def main() -> None:
     agent = Agent({"stream_fn": stream})
-    agent.set_model({"provider": "openai", "id": "gpt-5-mini", "api": None})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-pro-preview", "api": None})
     agent.set_timeout(120)
     agent.set_system_prompt(
         "You are a helpful assistant. "
-        "Use tools when they improve accuracy or when the user asks for external actions."
+        "Use tools when they improve accuracy or when the user asks for external actions. "
+        "When existing tools are insufficient, use the toolsmaker tool to create minimal-capability tools. "
+        "Follow the lifecycle: create first, then approve, then activate. "
+        "When calling toolsmaker create, always include intent.capabilities; "
+        "fs_read/fs_write require allowed_paths and http requires allowed_domains."
     )
 
     embedder = Embedder(use_api="openai")
@@ -438,11 +888,24 @@ async def main() -> None:
     memory_subscriber = MemorySubscriber(ingestion_worker=ingestion_worker)
 
     memory_search_tool = MemorySearchTool(retriever=retriever)
-    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool(), memory_search_tool])
+    toolsmaker_caps = _parse_toolsmaker_allowed_capabilities(os.getenv("POP_AGENT_TOOLSMAKER_ALLOWED_CAPS"))
+    toolsmaker_tool = ToolsmakerTool(agent=agent, allowed_capabilities=toolsmaker_caps)
+    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool(), memory_search_tool, toolsmaker_tool])
 
-    log_level = os.getenv("POP_AGENT_LOG_LEVEL", "quiet")
+    log_level = os.getenv("POP_AGENT_LOG_LEVEL", "messages")
+    toolsmaker_manual_approval = _parse_bool_env("POP_AGENT_TOOLSMAKER_PROMPT_APPROVAL", True)
+    toolsmaker_auto_activate = _parse_bool_env("POP_AGENT_TOOLSMAKER_AUTO_ACTIVATE", True)
+
     unsubscribe_log = agent.subscribe(make_event_logger(log_level))
     unsubscribe_memory = agent.subscribe(memory_subscriber.on_event)
+    if toolsmaker_manual_approval:
+        approval_subscriber = ToolsmakerApprovalSubscriber(
+            agent=agent,
+            auto_activate_default=toolsmaker_auto_activate,
+        )
+        unsubscribe_approval = agent.subscribe(approval_subscriber.on_event)
+    else:
+        unsubscribe_approval = lambda: None
 
     try:
         top_k = max(1, int(os.getenv("POP_AGENT_MEMORY_TOP_K", "3") or "3"))
@@ -450,6 +913,13 @@ async def main() -> None:
         top_k = 3
 
     print("POP Chatroom Agent (tools + embedding memory)")
+    if toolsmaker_manual_approval:
+        print(
+            "[toolsmaker] manual approval prompts: on "
+            f"(default auto-activate={'on' if toolsmaker_auto_activate else 'off'})"
+        )
+    else:
+        print("[toolsmaker] manual approval prompts: off")
     print("Type 'exit' or 'quit' to stop.\n")
     try:
         while True:
@@ -492,6 +962,7 @@ async def main() -> None:
             print(f"[memory] shutdown warning: {exc}")
         unsubscribe_memory()
         unsubscribe_log()
+        unsubscribe_approval()
 
 
 if __name__ == "__main__":

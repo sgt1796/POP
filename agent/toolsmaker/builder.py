@@ -136,9 +136,17 @@ class ToolBuilder:
             body.extend(
                 [
                     "        write_path = params.get(\"write_path\")",
+                    "        if write_path is None:",
+                    "            write_path = params.get(\"file_path\")",
+                    "        if write_path is None:",
+                    "            write_path = params.get(\"path\")",
                     "        if write_path is not None:",
-                    "            write_content = str(params.get(\"write_content\", \"\"))",
+                    "            write_content = params.get(\"write_content\")",
+                    "            if write_content is None:",
+                    "                write_content = params.get(\"content\", \"\")",
+                    "            write_content = str(write_content)",
                     "            self._write_text(str(write_path), write_content)",
+                    "            lines.append(f\"write_path={write_path}\")",
                     "            lines.append(f\"wrote_chars={len(write_content)}\")",
                 ]
             )

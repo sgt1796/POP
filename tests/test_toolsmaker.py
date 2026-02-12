@@ -167,6 +167,34 @@ def test_policy_blocks_non_whitelisted_domain(tmp_path: Path):
         asyncio.run(tool.execute("t1", {"url": "https://blocked.example.com/data"}))
 
 
+def test_fs_write_supports_file_path_and_content_aliases(tmp_path: Path):
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
+        project_root=str(tmp_path),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
+    )
+    request = _request(
+        "alias_writer",
+        "Write files in an allowed folder",
+        capabilities=["fs_write"],
+        allowed_paths=["allowed"],
+    )
+    build = registry.build_tool(request)
+    registry.approve_tool(build.spec.name, build.spec.version)
+    tool = registry.activate_tool_version(build.spec.name, build.spec.version)
+
+    asyncio.run(
+        tool.execute(
+            "t1",
+            {"file_path": "allowed/alias.txt", "content": "hello alias"},
+        )
+    )
+
+    target = tmp_path / "allowed" / "alias.txt"
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == "hello alias"
+
+
 def test_tool_timeout_is_enforced(tmp_path: Path):
     registry = ToolsmakerRegistry(
         base_dir=str(tmp_path / "toolsmaker"),
