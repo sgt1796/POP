@@ -150,6 +150,28 @@ def _format_message_line(message: Any) -> str:
     return f"[event] {role}: {text}"
 
 
+def _extract_bash_exec_command(event: Dict[str, Any]) -> str:
+    args = event.get("args")
+    if isinstance(args, dict):
+        cmd = args.get("cmd")
+        if isinstance(cmd, str) and cmd.strip():
+            return cmd.strip()
+
+    result = event.get("result")
+    details = getattr(result, "details", None)
+    if isinstance(details, dict):
+        cmd = details.get("command")
+        if isinstance(cmd, str) and cmd.strip():
+            return cmd.strip()
+    if isinstance(result, dict):
+        details = result.get("details")
+        if isinstance(details, dict):
+            cmd = details.get("command")
+            if isinstance(cmd, str) and cmd.strip():
+                return cmd.strip()
+    return ""
+
+
 def make_event_logger(level: str = "quiet"):
     """Create an event logger function for agent events.
     Levels:
@@ -161,9 +183,15 @@ def make_event_logger(level: str = "quiet"):
     level_value = _resolve_log_level(level)
 
     def log(event: Dict[str, Any]) -> None:
-        if level_value <= LOG_LEVELS["quiet"]:
-            return
         etype = event.get("type")
+        if level_value <= LOG_LEVELS["quiet"]:
+            if etype == "tool_execution_end" and str(event.get("toolName", "")).strip() == "bash_exec":
+                command = _extract_bash_exec_command(event)
+                if command:
+                    print(f"Ran command {command}")
+                else:
+                    print("Ran command")
+            return
 
         if etype == "tool_execution_start":
             print(f"[tool:start] {event.get('toolName')} args={event.get('args')}")
