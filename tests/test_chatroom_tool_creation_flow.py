@@ -121,6 +121,22 @@ def test_toolsmaker_blocks_empty_capabilities_for_writer_intent(tmp_path: Path):
     assert "no-op tool" in _text(result).lower()
 
 
+def test_toolsmaker_blocks_placeholder_tool_name(tmp_path: Path):
+    _, tool = _make_agent_and_tool(tmp_path)
+    result = asyncio.run(
+        tool.execute(
+            "tc1",
+            {
+                "action": "create",
+                "intent": _safe_intent("generated_tool"),
+            },
+        )
+    )
+
+    assert result.details["ok"] is False
+    assert "meaningful" in str(result.details.get("error", "")).lower()
+
+
 def test_toolsmaker_approve_activate_and_list(tmp_path: Path):
     agent, tool = _make_agent_and_tool(tmp_path)
     create = asyncio.run(tool.execute("tc1", {"action": "create", "intent": _safe_intent("flow_tool")}))

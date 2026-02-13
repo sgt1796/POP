@@ -5,6 +5,7 @@ import re
 from typing import Any, Dict, List
 
 from agent.agent_types import ToolSpec
+from agent.toolsmaker.builder import is_meaningful_tool_name
 
 
 FORBIDDEN_IMPORTS = {"subprocess", "socket", "ctypes", "importlib", "pathlib"}
@@ -78,6 +79,8 @@ def validate_tool_spec(spec: ToolSpec) -> Dict[str, Any]:
 
     if not re.match(r"^[a-zA-Z][a-zA-Z0-9_]{0,63}$", spec.name or ""):
         errors.append("Tool name must match ^[a-zA-Z][a-zA-Z0-9_]{0,63}$")
+    elif not is_meaningful_tool_name(spec.name):
+        errors.append("Tool name must be meaningful and not a placeholder (e.g. generated_tool)")
 
     schema = spec.json_schema_parameters or {}
     if schema.get("type") != "object":

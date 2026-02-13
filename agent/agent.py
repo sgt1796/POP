@@ -459,6 +459,7 @@ class Agent:
             get_api_key=self.get_api_key,
             get_steering_messages=self._get_steering_messages,
             get_follow_up_messages=self._get_follow_up_messages,
+            get_tools=self._tool_registry.snapshot_tools,
             reasoning=None if self._state.thinking_level == "off" else self._state.thinking_level,
             session_id=self._session_id,
             thinking_budgets=self._thinking_budgets,

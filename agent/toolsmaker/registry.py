@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from agent.agent_types import AgentTool, ToolBuildRequest, ToolBuildResult, ToolPolicy, ToolSpec
 from agent.toolsmaker.approvals import ApprovalStateMachine, write_review_artifact
-from agent.toolsmaker.builder import ToolBuilder, sanitize_tool_name
+from agent.toolsmaker.builder import ToolBuilder, normalize_tool_name
 from agent.toolsmaker.loader import ToolLoader
 from agent.toolsmaker.policy import PolicyGuardedTool, ToolPolicyEnforcer
 from agent.toolsmaker.validator import validate_generated_code, validate_tool_spec
@@ -288,7 +288,7 @@ class ToolsmakerRegistry:
         return self._builder.create_build_request_from_intent(intent)
 
     def build_tool(self, request: ToolBuildRequest) -> ToolBuildResult:
-        request.name = sanitize_tool_name(request.name)
+        request.name = normalize_tool_name(request.name, context="Tool request")
         self._emit(
             "tool_build_requested",
             toolName=request.name,

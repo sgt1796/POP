@@ -11,7 +11,7 @@ from POP.stream import stream
 
 from agent import Agent
 from agent.agent_types import AgentTool, AgentToolResult, TextContent
-from agent.tools import FastTool, SlowTool, WebSnapshotTool
+from agent.tools import BashExecConfig, BashExecTool, FastTool, SlowTool, WebSnapshotTool
 
 # Logging helpers
 LOG_LEVELS = {
@@ -24,6 +24,9 @@ LOG_LEVELS = {
 USER_PROMPT_MARKER = "|Current user message|:\n"
 DEFAULT_TOOLSMAKER_ALLOWED_CAPS = "fs_read,fs_write,http"
 TOOL_CAPABILITIES = {"fs_read", "fs_write", "http", "secrets"}
+BASH_READ_COMMANDS = {"pwd", "ls", "cat", "head", "tail", "wc", "find", "rg", "git", "echo", "df", "du"}
+BASH_WRITE_COMMANDS = {"mkdir", "touch", "cp", "mv", "rm"}
+BASH_GIT_READ_SUBCOMMANDS = {"status", "diff", "log", "show", "branch"}
 
 
 def _parse_toolsmaker_allowed_capabilities(value: Optional[str]) -> List[str]:
@@ -52,6 +55,53 @@ def _parse_bool_env(name: str, default: bool) -> bool:
     if key in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+
+def _parse_float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _parse_path_list_env(name: str, default_paths: Sequence[str], base_dir: str) -> List[str]:
+    value = os.getenv(name)
+    raw_items = []
+    if value is None:
+        raw_items = [str(item) for item in default_paths]
+    else:
+        raw_items = [x.strip() for x in str(value).split(",") if x.strip()]
+        if not raw_items:
+            raw_items = [str(item) for item in default_paths]
+
+    normalized: List[str] = []
+    seen = set()
+    for item in raw_items:
+        candidate = item if os.path.isabs(item) else os.path.join(base_dir, item)
+        root = os.path.realpath(candidate)
+        if root in seen:
+            continue
+        normalized.append(root)
+        seen.add(root)
+    return normalized
+
+
+def _sorted_csv(values: Sequence[str]) -> str:
+    cleaned = {str(item).strip() for item in values if str(item).strip()}
+    return ", ".join(sorted(cleaned))
 
 
 def _resolve_log_level(value: str) -> int:
@@ -861,6 +911,32 @@ class ToolsmakerApprovalSubscriber:
             print(f"[toolsmaker] manual approval warning: {exc}")
 
 
+class BashExecApprovalPrompter:
+    """Prompt the terminal user for medium/high risk bash_exec commands."""
+
+    def __call__(self, request: Dict[str, Any]) -> bool:
+        try:
+            command = str(request.get("command", "")).strip()
+            cwd = str(request.get("cwd", "")).strip()
+            risk = str(request.get("risk", "")).strip() or "unknown"
+            justification = str(request.get("justification", "")).strip()
+
+            print("\n[bash_exec] Approval requested.")
+            print(f"[bash_exec] risk={risk}")
+            print(f"[bash_exec] cwd={cwd}")
+            print(f"[bash_exec] command={command}")
+            if justification:
+                print(f"[bash_exec] justification={justification}")
+            else:
+                print("[bash_exec] justification=(none)")
+
+            decision = input("[bash_exec] Allow this command? [y/N]: ").strip().lower()
+            return decision in {"y", "yes"}
+        except Exception as exc:
+            print(f"[bash_exec] approval prompt warning: {exc}")
+            return False
+
+
 async def _read_input(prompt: str) -> str:
     return input(prompt)
 
@@ -869,14 +945,6 @@ async def main() -> None:
     agent = Agent({"stream_fn": stream})
     agent.set_model({"provider": "gemini", "id": "gemini-3-pro-preview", "api": None})
     agent.set_timeout(120)
-    agent.set_system_prompt(
-        "You are a helpful assistant. "
-        "Use tools when they improve accuracy or when the user asks for external actions. "
-        "When existing tools are insufficient, use the toolsmaker tool to create minimal-capability tools. "
-        "Follow the lifecycle: create first, then approve, then activate. "
-        "When calling toolsmaker create, always include intent.capabilities; "
-        "fs_read/fs_write require allowed_paths and http requires allowed_domains."
-    )
 
     embedder = Embedder(use_api="openai")
     short_memory = ConversationMemory(embedder=embedder, max_entries=100)
@@ -890,9 +958,63 @@ async def main() -> None:
     memory_search_tool = MemorySearchTool(retriever=retriever)
     toolsmaker_caps = _parse_toolsmaker_allowed_capabilities(os.getenv("POP_AGENT_TOOLSMAKER_ALLOWED_CAPS"))
     toolsmaker_tool = ToolsmakerTool(agent=agent, allowed_capabilities=toolsmaker_caps)
-    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool(), memory_search_tool, toolsmaker_tool])
+    workspace_root = os.path.realpath(os.getcwd())
+    bash_allowed_roots = _parse_path_list_env(
+        "POP_AGENT_BASH_ALLOWED_ROOTS",
+        default_paths=[workspace_root],
+        base_dir=workspace_root,
+    )
+    bash_writable_roots = _parse_path_list_env(
+        "POP_AGENT_BASH_WRITABLE_ROOTS",
+        default_paths=[workspace_root],
+        base_dir=workspace_root,
+    )
+    bash_timeout_s = _parse_float_env("POP_AGENT_BASH_TIMEOUT_S", 15.0)
+    bash_max_output_chars = _parse_int_env("POP_AGENT_BASH_MAX_OUTPUT_CHARS", 20_000)
+    bash_prompt_approval = _parse_bool_env("POP_AGENT_BASH_PROMPT_APPROVAL", True)
+    bash_approval_fn = BashExecApprovalPrompter() if bash_prompt_approval else None
+    bash_exec_tool = BashExecTool(
+        BashExecConfig(
+            project_root=workspace_root,
+            allowed_roots=bash_allowed_roots,
+            writable_roots=bash_writable_roots,
+            read_commands=BASH_READ_COMMANDS,
+            write_commands=BASH_WRITE_COMMANDS,
+            git_read_subcommands=BASH_GIT_READ_SUBCOMMANDS,
+            default_timeout_s=bash_timeout_s,
+            max_timeout_s=60.0,
+            default_max_output_chars=bash_max_output_chars,
+            max_output_chars_limit=100_000,
+        ),
+        approval_fn=bash_approval_fn,
+    )
+    bash_read_csv = _sorted_csv(BASH_READ_COMMANDS)
+    bash_write_csv = _sorted_csv(BASH_WRITE_COMMANDS)
+    bash_git_csv = _sorted_csv(BASH_GIT_READ_SUBCOMMANDS)
+    bash_exec_tool.description = (
+        "Run one safe shell command without a shell. "
+        f"Allowed read commands: {bash_read_csv}. "
+        f"Allowed write commands: {bash_write_csv}. "
+        f"For git, allowed subcommands: {bash_git_csv}. "
+        "Write commands require approval."
+    )
+    agent.set_system_prompt(
+        "You are a helpful assistant. "
+        "Use tools when they improve accuracy or when the user asks for external actions. "
+        "Prefer existing tools first, especially bash_exec for filesystem/shell inspection tasks. "
+        "Use toolsmaker only when no existing tool can safely complete the request. "
+        "When existing tools are insufficient, use the toolsmaker tool to create minimal-capability tools. "
+        "Follow the lifecycle: create first, then approve, then activate. "
+        "When calling toolsmaker create, always include intent.capabilities; "
+        "fs_read/fs_write require allowed_paths and http requires allowed_domains. "
+        f"Bash_exec allowlist (read): {bash_read_csv}. "
+        f"Bash_exec allowlist (write): {bash_write_csv}. "
+        f"Bash_exec git subcommands: {bash_git_csv}. "
+        "Never call bash_exec with a command/subcommand outside those allowlists."
+    )
+    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool(), memory_search_tool, toolsmaker_tool, bash_exec_tool])
 
-    log_level = os.getenv("POP_AGENT_LOG_LEVEL", "messages")
+    log_level = os.getenv("POP_AGENT_LOG_LEVEL", "quiet")
     toolsmaker_manual_approval = _parse_bool_env("POP_AGENT_TOOLSMAKER_PROMPT_APPROVAL", True)
     toolsmaker_auto_activate = _parse_bool_env("POP_AGENT_TOOLSMAKER_AUTO_ACTIVATE", True)
 
@@ -920,6 +1042,10 @@ async def main() -> None:
         )
     else:
         print("[toolsmaker] manual approval prompts: off")
+    if bash_prompt_approval:
+        print("[bash_exec] approval prompts: on")
+    else:
+        print("[bash_exec] approval prompts: off (medium/high commands will be denied)")
     print("Type 'exit' or 'quit' to stop.\n")
     try:
         while True:

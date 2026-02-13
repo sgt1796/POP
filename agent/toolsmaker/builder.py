@@ -9,14 +9,78 @@ from typing import Any, Dict, List
 from agent.agent_types import ToolBuildRequest, ToolCapability, ToolSpec
 
 
+_GENERIC_NAME_EXACT = {
+    "generated_tool",
+    "tool",
+    "new_tool",
+    "default_tool",
+    "my_tool",
+    "temp_tool",
+    "test_tool",
+    "sample_tool",
+    "example_tool",
+    "dynamic_tool",
+    "unnamed_tool",
+    "untitled_tool",
+}
+
+_GENERIC_NAME_TOKENS = {
+    "generated",
+    "tool",
+    "tools",
+    "dynamic",
+    "default",
+    "new",
+    "my",
+    "temp",
+    "tmp",
+    "test",
+    "sample",
+    "example",
+    "custom",
+    "helper",
+    "util",
+    "utility",
+    "placeholder",
+    "unnamed",
+    "untitled",
+    "auto",
+    "generic",
+}
+
+_VERSION_TOKEN = re.compile(r"^v?\d+$")
+
+
 def sanitize_tool_name(value: str) -> str:
     base = re.sub(r"[^a-zA-Z0-9_]+", "_", (value or "").strip())
     base = base.strip("_")
     if not base:
-        return "generated_tool"
+        return ""
     if not re.match(r"^[a-zA-Z]", base):
         base = f"t_{base}"
     return base[:64]
+
+
+def is_meaningful_tool_name(value: str) -> bool:
+    name = sanitize_tool_name(value)
+    if not name:
+        return False
+    lowered = name.lower()
+    if lowered in _GENERIC_NAME_EXACT:
+        return False
+    tokens = [token for token in lowered.split("_") if token and not _VERSION_TOKEN.match(token)]
+    if not tokens:
+        return False
+    return any(token not in _GENERIC_NAME_TOKENS and len(token) >= 2 for token in tokens)
+
+
+def normalize_tool_name(value: str, *, context: str = "Tool intent") -> str:
+    name = sanitize_tool_name(value)
+    if not name:
+        raise ValueError(f"{context} is missing 'name'.")
+    if not is_meaningful_tool_name(name):
+        raise ValueError(f"{context} 'name' must be meaningful and not a placeholder like 'generated_tool'.")
+    return name
 
 
 class ToolBuilder:
@@ -30,9 +94,7 @@ class ToolBuilder:
     def create_build_request_from_intent(intent: Dict[str, Any]) -> ToolBuildRequest:
         if not isinstance(intent, dict):
             raise ValueError("Tool intent must be a structured object.")
-        name = sanitize_tool_name(str(intent.get("name", "")).strip())
-        if not name:
-            raise ValueError("Tool intent is missing 'name'.")
+        name = normalize_tool_name(str(intent.get("name", "")).strip(), context="Tool intent")
         purpose = str(intent.get("purpose", "")).strip()
         if not purpose:
             raise ValueError("Tool intent is missing 'purpose'.")
@@ -90,7 +152,7 @@ class ToolBuilder:
     def build_spec(self, request: ToolBuildRequest, version: int) -> ToolSpec:
         description = f"{request.purpose.strip()} (generated tool)"
         return ToolSpec(
-            name=sanitize_tool_name(request.name),
+            name=normalize_tool_name(request.name, context="Tool request"),
             description=description,
             json_schema_parameters=self._build_json_schema(request),
             capabilities=list(request.capabilities),

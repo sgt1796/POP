@@ -9,7 +9,7 @@ import pytest
 
 from agent import Agent
 from agent.agent_loop import _execute_tool_calls
-from agent.agent_types import ToolBuildRequest, ToolCallContent
+from agent.agent_types import AgentTool, AgentToolResult, TextContent, ToolBuildRequest, ToolCallContent
 from agent.toolsmaker.policy import ToolPolicyViolation
 from agent.toolsmaker.registry import ToolsmakerRegistry
 from agent.tools import FastTool, SlowTool, WebSnapshotTool
@@ -87,6 +87,23 @@ def test_generated_tool_activation_requires_approval(tmp_path: Path):
     assert approved.status == "approved"
     activated = registry.activate_tool_version(result.spec.name, result.spec.version)
     assert activated.name == result.spec.name
+
+
+@pytest.mark.parametrize("name", ["generated_tool", "tool", "new_tool", "example_tool", "tool_123"])
+def test_registry_rejects_placeholder_tool_names(tmp_path: Path, name: str):
+    registry = ToolsmakerRegistry(
+        base_dir=str(tmp_path / "toolsmaker"),
+        project_root=str(tmp_path),
+        audit_path=str(tmp_path / "toolsmaker" / "audit.jsonl"),
+    )
+    request = _request(
+        name,
+        "Read approved text files",
+        capabilities=["fs_read"],
+        allowed_paths=["workspace"],
+    )
+    with pytest.raises(ValueError, match="meaningful"):
+        registry.build_tool(request)
 
 
 def test_forbidden_import_is_rejected_before_approval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -298,3 +315,63 @@ def test_audit_events_and_policy_blocked_event(tmp_path: Path, monkeypatch: pyte
         "tool_activated",
     ]
     assert "tool_policy_blocked" in audit_types
+
+
+def test_execute_tool_calls_refreshes_tools_mid_batch():
+    active_tools: list[AgentTool] = []
+
+    class ActivateTool(AgentTool):
+        name = "activate_dynamic"
+        description = "Activates a dynamic tool."
+        parameters = {"type": "object", "properties": {}}
+        label = "Activate Dynamic"
+
+        async def execute(self, tool_call_id, params, signal=None, on_update=None):
+            del tool_call_id, params, signal, on_update
+            active_tools.append(DynamicTool())
+            return AgentToolResult(
+                content=[TextContent(type="text", text="activated")],
+                details={},
+            )
+
+    class DynamicTool(AgentTool):
+        name = "dynamic_tool"
+        description = "Returns dynamic output."
+        parameters = {"type": "object", "properties": {}}
+        label = "Dynamic Tool"
+
+        async def execute(self, tool_call_id, params, signal=None, on_update=None):
+            del tool_call_id, params, signal, on_update
+            return AgentToolResult(
+                content=[TextContent(type="text", text="dynamic ok")],
+                details={},
+            )
+
+    class CaptureStream:
+        def __init__(self) -> None:
+            self.events: list[Dict[str, Any]] = []
+
+        def push(self, event: Dict[str, Any]) -> None:
+            self.events.append(event)
+
+    active_tools.append(ActivateTool())
+    stream = CaptureStream()
+    tool_calls = [
+        ToolCallContent(type="toolCall", id="tc1", name="activate_dynamic", arguments={}),
+        ToolCallContent(type="toolCall", id="tc2", name="dynamic_tool", arguments={}),
+    ]
+    results, steering = asyncio.run(
+        _execute_tool_calls(
+            tools=list(active_tools),
+            tool_calls=tool_calls,
+            signal=None,
+            stream=stream,
+            get_steering_messages=None,
+            get_tools=lambda: list(active_tools),
+        )
+    )
+
+    assert steering is None
+    assert len(results) == 2
+    second_text = "".join(getattr(item, "text", "") for item in results[1].content)
+    assert "dynamic ok" in second_text
