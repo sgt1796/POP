@@ -971,7 +971,7 @@ async def _read_input(prompt: str) -> str:
 
 async def main() -> None:
     agent = Agent({"stream_fn": stream})
-    agent.set_model({"provider": "gemini", "id": "gemini-3-pro-preview", "api": None})
+    agent.set_model({"provider": "gemini", "id": "gemini-3-flash-preview", "api": None})
     agent.set_timeout(120)
 
     embedder = Embedder(use_api="openai")

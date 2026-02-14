@@ -32,11 +32,16 @@ setup(
         "requests>=2.25.0",
         "python-dotenv",
         "pydantic>=1.10",
-        "transformers>=4.30.0",
         "numpy>=1.21",
         "backoff",
         "Pillow>=9.0",
     ],
+    extras_require={
+        "local-embeddings": [
+            "torch",
+            "transformers>=4.30.0",
+        ],
+    },
 
     python_requires=">=3.8",
 
