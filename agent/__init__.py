@@ -30,7 +30,13 @@ from .agent_types import (
     AgentContext,
     AgentEvent,
     ThinkingLevel,
+    ToolCapability,
+    ToolPolicy,
+    ToolSpec,
+    ToolBuildRequest,
+    ToolBuildResult,
 )
+from .toolsmaker.registry import ToolsmakerRegistry
 
 __all__ = [
     "Agent",
@@ -44,4 +50,10 @@ __all__ = [
     "AgentContext",
     "AgentEvent",
     "ThinkingLevel",
+    "ToolCapability",
+    "ToolPolicy",
+    "ToolSpec",
+    "ToolBuildRequest",
+    "ToolBuildResult",
+    "ToolsmakerRegistry",
 ]

@@ -1,4 +1,6 @@
 from types import SimpleNamespace
+import builtins
+import sys
 
 import numpy as np
 import pytest
@@ -62,3 +64,19 @@ def test_get_embedding_requires_list(monkeypatch):
     embedder = Embedder(use_api="openai", model_name="text-embedding-3-small")
     with pytest.raises(ValueError):
         embedder.get_embedding("not-a-list")
+
+
+def test_local_embedder_without_transformers_raises_helpful_error(monkeypatch):
+    fake_torch = SimpleNamespace(float16="float16")
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    original_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "transformers" or name.startswith("transformers."):
+            raise ImportError("transformers unavailable")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    with pytest.raises(ImportError, match="optional dependency 'transformers'"):
+        Embedder(model_name="local-model")

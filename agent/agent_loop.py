@@ -47,6 +47,7 @@ from .agent_types import (
     ThinkingContent,
     ToolCallContent,
 )
+from .toolsmaker.registry import append_audit_event
 
 # Attempt to import POP for the default LLM transport.  If
 # unavailable the user must supply their own `stream_fn`.
@@ -103,6 +104,13 @@ class AgentLoopConfig:
         calls and no steering messages).  Returns messages to be
         appended to the context before starting another turn.  If
         empty the loop terminates.
+    get_tools : callable, optional
+        Optional callback returning the latest active tool snapshot.
+        When provided the loop refreshes available tools between LLM
+        calls and can re-check tool availability during tool call
+        execution.  This allows tools activated mid-turn (e.g. via
+        a lifecycle tool) to be callable without waiting for a new
+        user prompt.
     reasoning : str, optional
         Reasoning level to request from the LLM.  Only relevant
         models honour this flag.  Use ``None`` to disable explicit
@@ -135,6 +143,7 @@ class AgentLoopConfig:
     get_api_key: Optional[Callable[[str], Awaitable[Optional[str]]]] = None
     get_steering_messages: Optional[Callable[[], Awaitable[List[AgentMessage]]]] = None
     get_follow_up_messages: Optional[Callable[[], Awaitable[List[AgentMessage]]]] = None
+    get_tools: Optional[Callable[[], Sequence[AgentTool]]] = None
     reasoning: Optional[str] = None
     session_id: Optional[str] = None
     thinking_budgets: Optional[Dict[str, Any]] = None
@@ -536,6 +545,14 @@ async def _run_loop(
                     new_messages.append(message)
                 pending_messages = []
 
+            # Refresh tool list before each LLM request so newly
+            # activated tools are visible in planning.
+            if config.get_tools is not None:
+                try:
+                    current_context.tools = list(config.get_tools())
+                except Exception:
+                    pass
+
             # Request assistant response
             message = await _stream_assistant_response(
                 current_context,
@@ -566,6 +583,7 @@ async def _run_loop(
                     signal,
                     stream,
                     config.get_steering_messages,
+                    config.get_tools,
                 )
                 tool_results.extend(execution[0])
                 steering_after_tools = execution[1]
@@ -833,6 +851,7 @@ async def _execute_tool_calls(
     signal: Optional[asyncio.Event],
     stream: EventStream[AgentEvent, List[AgentMessage]],
     get_steering_messages: Optional[Callable[[], Awaitable[List[AgentMessage]]]],
+    get_tools: Optional[Callable[[], Sequence[AgentTool]]] = None,
 ) -> Tuple[List[AgentMessage], Optional[List[AgentMessage]]]:
     """Execute a list of tool calls and return their results.
 
@@ -852,6 +871,9 @@ async def _execute_tool_calls(
     get_steering_messages : callable, optional
         Callback to retrieve steering messages.  If non empty the
         remaining tool calls are skipped and those messages returned.
+    get_tools : callable, optional
+        Callback returning latest active tools. Used to re-check tool
+        availability during multi-call batches.
 
     Returns
     -------
@@ -873,6 +895,17 @@ async def _execute_tool_calls(
                 if getattr(t, "name", None) == tool_call.name:
                     tool = t
                     break
+        if tool is None and get_tools is not None:
+            try:
+                latest_tools = list(get_tools())
+            except Exception:
+                latest_tools = []
+            if latest_tools:
+                tools = latest_tools
+                for t in latest_tools:
+                    if getattr(t, "name", None) == tool_call.name:
+                        tool = t
+                        break
 
         # Emit start event
         stream.push({
@@ -904,6 +937,20 @@ async def _execute_tool_calls(
         except Exception as exc:
             # Convert error into a tool result
             is_error = True
+            if getattr(exc, "policy_blocked", False):
+                blocked_event = {
+                    "type": "tool_policy_blocked",
+                    "toolCallId": tool_call.id,
+                    "toolName": tool_call.name,
+                    "args": tool_call.arguments,
+                    "error": str(exc),
+                    "details": getattr(exc, "details", {}),
+                }
+                stream.push(blocked_event)
+                try:
+                    append_audit_event(blocked_event)
+                except Exception:
+                    pass
             result = AgentToolResult(
                 content=[TextContent(type="text", text=str(exc))],
                 details={},
