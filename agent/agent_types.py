@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Protocol, Union, Literal
 
 
 ###############################################################################
@@ -241,6 +241,83 @@ class AgentToolResult:
 
 
 ###############################################################################
+# Dynamic tool authoring contracts
+###############################################################################
+
+ToolCapability = Union[
+    Literal["fs_read"],
+    Literal["fs_write"],
+    Literal["http"],
+    Literal["secrets"],
+]
+
+ToolBuildStatus = Union[
+    Literal["draft"],
+    Literal["validated"],
+    Literal["approval_required"],
+    Literal["approved"],
+    Literal["rejected"],
+    Literal["activated"],
+]
+
+
+@dataclass
+class ToolPolicy:
+    """Execution policy for a dynamically authored tool."""
+
+    capabilities: List[ToolCapability] = field(default_factory=list)
+    allowed_paths: List[str] = field(default_factory=list)
+    allowed_domains: List[str] = field(default_factory=list)
+    required_secrets: List[str] = field(default_factory=list)
+    timeout_s: float = 30.0
+    max_output_chars: int = 20_000
+
+
+@dataclass
+class ToolSpec:
+    """Canonical persisted contract for a generated tool version."""
+
+    name: str
+    description: str
+    json_schema_parameters: Dict[str, Any]
+    capabilities: List[ToolCapability]
+    allowed_paths: List[str]
+    allowed_domains: List[str]
+    required_secrets: List[str]
+    timeout_s: float
+    version: int
+    created_at: float
+
+
+@dataclass
+class ToolBuildRequest:
+    """Structured request emitted by a planner/model for tool authoring."""
+
+    name: str
+    purpose: str
+    inputs: Dict[str, Any]
+    outputs: List[str]
+    capabilities: List[ToolCapability]
+    risk: str
+    allowed_paths: List[str] = field(default_factory=list)
+    allowed_domains: List[str] = field(default_factory=list)
+    required_secrets: List[str] = field(default_factory=list)
+    timeout_s: float = 30.0
+
+
+@dataclass
+class ToolBuildResult:
+    """Result of generating and validating a dynamic tool version."""
+
+    spec: ToolSpec
+    status: ToolBuildStatus
+    code_path: str
+    spec_path: str
+    review_path: str
+    validation: Dict[str, Any]
+
+
+###############################################################################
 # Agent context and events
 ###############################################################################
 
@@ -253,11 +330,6 @@ class AgentContext:
     messages: List[AgentMessage]
     tools: Optional[List[AgentTool]] = None
 
-
-# Thinking level definitions.  These are taken from the original
-# JavaScript implementation and may be ignored by providers that do
-# not support explicit reasoning control.
-from typing import Literal
 
 # Thinking level definitions.  These are taken from the original
 # JavaScript implementation and may be ignored by providers that do

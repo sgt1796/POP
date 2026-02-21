@@ -11,6 +11,7 @@ lifting to the functions in :mod:`pop_agent.agent_loop`.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -23,9 +24,17 @@ from .agent_types import (
     AgentState,
     AgentTool,
     AgentToolResult,
+    ToolBuildRequest,
+    ToolBuildResult,
     ThinkingLevel,
     TextContent,
     ImageContent,
+)
+from .toolsmaker.registry import (
+    ToolsmakerRegistry,
+    DEFAULT_AUDIT_PATH,
+    DEFAULT_TOOLSMAKER_DIR,
+    set_default_audit_path,
 )
 
 # Attempt to import POP to obtain a default model and stream function
@@ -121,7 +130,7 @@ class Agent:
             POP.get_client("gemini", "gemini-2.5-flash-lite-preview-06-17")  # type: ignore
             default_model = {"provider": "gemini", "id": "gemini-2.5-flash-lite", "api": None}  # type: ignore
         except Exception as e:
-            print(f"[ initialize ] POP exception: {e}.")
+            print(f"[ initializing ] POP exception: {e}.")
             default_model = {"provider": "unknown", "id": "unknown", "api": None}
         
         initial = AgentState(
@@ -142,6 +151,19 @@ class Agent:
         self._state: AgentState = initial
         # Event listeners
         self._listeners: set[Callable[[AgentEvent], None]] = set()
+        # Registry-backed tool lifecycle (static + dynamic)
+        toolsmaker_dir = opts.get("toolsmaker_dir", DEFAULT_TOOLSMAKER_DIR)
+        toolsmaker_audit_path = opts.get("toolsmaker_audit_path", DEFAULT_AUDIT_PATH)
+        project_root = opts.get("project_root", os.getcwd())
+        set_default_audit_path(toolsmaker_audit_path)
+        self._tool_registry = ToolsmakerRegistry(
+            base_dir=toolsmaker_dir,
+            project_root=project_root,
+            event_sink=self._emit,
+            audit_path=toolsmaker_audit_path,
+        )
+        self._tool_registry.replace_static_tools(self._state.tools)
+        self._state.tools = self._tool_registry.snapshot_tools()
         # Conversion and context transform functions
         self._convert_to_llm = opts.get("convert_to_llm", _default_convert_to_llm)
         self._transform_context = opts.get("transform_context")
@@ -256,7 +278,41 @@ class Agent:
         return self._follow_up_mode
 
     def set_tools(self, tools: Sequence[AgentTool]) -> None:
-        self._state.tools = list(tools)
+        self._tool_registry.replace_static_tools(tools)
+        self._sync_tools_from_registry()
+
+    def add_tool(self, tool: AgentTool) -> None:
+        self._tool_registry.add_static_tool(tool)
+        self._sync_tools_from_registry()
+
+    def remove_tool(self, name: str) -> bool:
+        removed = self._tool_registry.remove_tool(name)
+        self._sync_tools_from_registry()
+        return removed
+
+    def list_tools(self) -> List[str]:
+        return self._tool_registry.list_tools()
+
+    def activate_tool_version(self, name: str, version: int, max_output_chars: int = 20_000) -> AgentTool:
+        tool = self._tool_registry.activate_tool_version(name=name, version=version, max_output_chars=max_output_chars)
+        self._sync_tools_from_registry()
+        return tool
+
+    def create_tool_build_request_from_intent(self, intent: Dict[str, Any]) -> ToolBuildRequest:
+        return self._tool_registry.create_build_request_from_intent(intent)
+
+    def build_dynamic_tool(self, request: ToolBuildRequest) -> ToolBuildResult:
+        return self._tool_registry.build_tool(request)
+
+    def build_dynamic_tool_from_intent(self, intent: Dict[str, Any]) -> ToolBuildResult:
+        request = self.create_tool_build_request_from_intent(intent)
+        return self.build_dynamic_tool(request)
+
+    def approve_dynamic_tool(self, name: str, version: int) -> ToolBuildResult:
+        return self._tool_registry.approve_tool(name=name, version=version)
+
+    def reject_dynamic_tool(self, name: str, version: int, reason: str = "rejected_by_reviewer") -> ToolBuildResult:
+        return self._tool_registry.reject_tool(name=name, version=version, reason=reason)
 
     def replace_messages(self, messages: Sequence[AgentMessage]) -> None:
         self._state.messages = list(messages)
@@ -388,10 +444,12 @@ class Agent:
         self._state.stream_message = None
         self._state.error = None
         # Build a copy of the current context
+        tools_snapshot = self._tool_registry.snapshot_tools()
+        self._state.tools = list(tools_snapshot)
         context = AgentContext(
             system_prompt=self._state.system_prompt,
             messages=list(self._state.messages),
-            tools=list(self._state.tools),
+            tools=list(tools_snapshot),
         )
         # Assemble configuration for the loop
         loop_config = AgentLoopConfig(
@@ -401,6 +459,7 @@ class Agent:
             get_api_key=self.get_api_key,
             get_steering_messages=self._get_steering_messages,
             get_follow_up_messages=self._get_follow_up_messages,
+            get_tools=self._tool_registry.snapshot_tools,
             reasoning=None if self._state.thinking_level == "off" else self._state.thinking_level,
             session_id=self._session_id,
             thinking_budgets=self._thinking_budgets,
@@ -483,6 +542,9 @@ class Agent:
             except Exception:
                 # Swallow exceptions from listeners to avoid breaking the agent
                 pass
+
+    def _sync_tools_from_registry(self) -> None:
+        self._state.tools = self._tool_registry.snapshot_tools()
 
     async def _get_steering_messages(self) -> List[AgentMessage]:
         """Retrieve queued steering messages according to the configured mode."""

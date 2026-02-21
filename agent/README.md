@@ -41,6 +41,10 @@ changing your business logic.
   `AgentTool` and implementing the `execute` coroutine.  Tools can
   stream partial results back to the agent via the `on_update`
   callback.
+- **Secure shell execution (`bash_exec`)** – the chatroom runtime
+  (`agent_build/agent0.py`) registers a static one-shot shell tool
+  with command allowlists, path scoping, risk-based approvals, timeout
+  and output limits.
 
 This project only provides the agent logic.  It does **not** ship
 any concrete LLM providers or authentication logic.  See the
@@ -156,3 +160,50 @@ external services or your own business logic.
 
 Refer to the inline documentation within each module for details on
 the available functions, classes and options.
+
+## Secure `bash_exec` tool (chatroom runtime)
+
+The chatroom entrypoint (`agent_build/agent0.py`) registers a built-in
+`bash_exec` tool with a strict safety model:
+
+- One-shot execution only (`asyncio.create_subprocess_exec`, invoked without shell).
+- No shell control operators or command chaining (`|`, `;`, `&&`, `||`,
+  backticks, `$(`, redirection, newlines).
+- Command allowlist only:
+  - Read: `pwd`, `ls`, `cat`, `head`, `tail`, `wc`, `find`, `rg`, `git`
+  - Write: `mkdir`, `touch`, `cp`, `mv`, `rm`
+- Conservative flag restrictions:
+  - `find`: blocks execution/file-writing primitives (for example `-exec`, `-delete`)
+  - `rg`: blocks `--pre` and `--pre-glob`
+  - `git`: blocks global path/config escape options (for example `-C`, `--git-dir`)
+  - `cp`/`mv`: blocks `-t`/`--target-directory`
+- Path policy:
+  - `cwd` must be inside `allowed_roots`
+  - Read paths must resolve inside `allowed_roots`
+  - Write targets must resolve inside `writable_roots`
+  - Writes targeting a writable root directory itself are blocked
+- Risk policy:
+  - `low`: read commands (auto-run)
+  - `medium`: `mkdir`, `touch`, `cp`, `mv` (approval required)
+  - `high`: `rm` (approval required)
+- Final output only (no streaming chunks), with timeout and max output cap.
+
+Environment variables used by `agent_build/agent0.py`:
+
+- `POP_AGENT_BASH_ALLOWED_ROOTS` (comma-separated, default current workspace root)
+- `POP_AGENT_BASH_WRITABLE_ROOTS` (comma-separated, default current workspace root)
+- `POP_AGENT_BASH_TIMEOUT_S` (default `15`)
+- `POP_AGENT_BASH_MAX_OUTPUT_CHARS` (default `20000`)
+- `POP_AGENT_BASH_PROMPT_APPROVAL` (default `true`; if `false`, approval-required commands are denied)
+
+Example read call:
+
+```json
+{"cmd":"ls agent/tools"}
+```
+
+Example write call requiring approval:
+
+```json
+{"cmd":"touch notes.txt","justification":"Create an empty notes file for this task"}
+```

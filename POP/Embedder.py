@@ -23,8 +23,6 @@ from os import getenv
 from backoff import on_exception, expo
 from typing import List
 
-from transformers import AutoTokenizer, AutoModel
-
 # Maximum number of tokens permitted by the Jina segmenter
 MAX_TOKENS = 8194
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -86,8 +84,21 @@ class Embedder:
 
     def _initialize_local_model(self) -> None:
         """Initialise the PyTorch model and tokenizer for local embedding generation."""
-        import torch
-        import torch.nn.functional as F
+        try:
+            import torch
+        except ImportError as exc:
+            raise ImportError(
+                "Local embedding requires optional dependency 'torch'. "
+                "Install torch or use use_api='openai'/'jina'."
+            ) from exc
+
+        try:
+            from transformers import AutoTokenizer, AutoModel
+        except ImportError as exc:
+            raise ImportError(
+                "Local embedding requires optional dependency 'transformers'. "
+                "Install transformers or use use_api='openai'/'jina'."
+            ) from exc
 
         if self.attn_implementation:
             self.model = AutoModel.from_pretrained(
@@ -213,8 +224,14 @@ class Embedder:
 
     def _get_torch_embedding(self, texts: List[str]) -> np.ndarray:
         """Generate embeddings using a local PyTorch model."""
-        import torch
-        import torch.nn.functional as F
+        try:
+            import torch
+            import torch.nn.functional as F
+        except ImportError as exc:
+            raise ImportError(
+                "Local embedding requires optional dependency 'torch'. "
+                "Install torch or use use_api='openai'/'jina'."
+            ) from exc
 
         @torch.no_grad()
         def _encode(instance: 'Embedder', input_texts: List[str]) -> np.ndarray:
