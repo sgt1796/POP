@@ -88,7 +88,7 @@ def test_blocks_control_operators(tmp_path: Path):
 
     assert result.details["ok"] is False
     assert result.details["blocked"] is True
-    assert result.details["block_reason"] == "blocked_shell_operator"
+    assert result.details["block_reason"] == "command_not_allowed"
 
 
 def test_blocks_unknown_command(tmp_path: Path):
