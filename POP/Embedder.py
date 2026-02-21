@@ -2,7 +2,7 @@
 Embedding utilities for POP.
 
 This module implements a unified embedding interface capable of
-fetching embeddings via third‑party APIs (JinaAI, OpenAI) or via
+fetching embeddings via third‑party APIs (JinaAI, OpenAI, Gemini) or via
 a local PyTorch model.  It is largely derived from the original
 POP project’s ``Embedder.py`` and can be used independently of
 ``PromptFunction``.
@@ -27,11 +27,12 @@ from transformers import AutoTokenizer, AutoModel
 
 # Maximum number of tokens permitted by the Jina segmenter
 MAX_TOKENS = 8194
+GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 class Embedder:
     """
     A class supporting multiple embedding methods, including Jina API,
-    OpenAI API, and local model embeddings via PyTorch.
+    OpenAI API, Gemini API (OpenAI-compatible), and local model embeddings via PyTorch.
 
     Parameters
     ----------
@@ -40,7 +41,7 @@ class Embedder:
         model for the selected API will be chosen.
     use_api:
         Which API to use for embedding.  Supported values are
-        ``'jina'``, ``'openai'`` and ``None`` (for local embedding).
+        ``'jina'``, ``'openai'``, ``'gemini'`` and ``None`` (for local embedding).
     to_cuda:
         If ``True``, use GPU; otherwise use CPU for local embeddings.
     attn_implementation:
@@ -56,7 +57,7 @@ class Embedder:
 
         # API‑based embedding initialisation
         if self.use_api is not None:
-            supported_apis = ['', 'jina', 'openai']
+            supported_apis = ['', 'jina', 'openai', 'gemini']
             if self.use_api not in supported_apis:
                 raise ValueError(f"API type '{self.use_api}' not supported. Supported APIs: {supported_apis}")
 
@@ -70,6 +71,12 @@ class Embedder:
             elif self.use_api == 'openai':
                 # Initialise OpenAI client
                 self.client = openai.Client(api_key=getenv("OPENAI_API_KEY"))
+            elif self.use_api == 'gemini':
+                # Initialise OpenAI-compatible Gemini embeddings client
+                self.client = openai.Client(
+                    api_key=getenv("GEMINI_API_KEY"),
+                    base_url=GEMINI_OPENAI_BASE_URL,
+                )
         else:
             # Load PyTorch model for local embedding generation
             if not model_name:
@@ -125,6 +132,10 @@ class Embedder:
                 if not self.model_name:
                     self.model_name = "text-embedding-3-small"
                 return self._get_openai_embedding(texts)
+            elif self.use_api == 'gemini':
+                if not self.model_name:
+                    self.model_name = "gemini-embedding-001"
+                return self._get_gemini_embedding(texts)
             else:
                 raise ValueError(f"API type '{self.use_api}' is not supported.")
         else:
@@ -177,6 +188,22 @@ class Embedder:
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i + batch_size]
                 batch_embeddings = self._get_openai_embedding(batch_texts)
+                all_embeddings.append(batch_embeddings)
+            return np.vstack(all_embeddings)
+        texts = [text.replace("\n", " ") for text in texts]
+        response = self.client.embeddings.create(input=texts, model=self.model_name)
+        embeddings = [item.embedding for item in response.data]
+        return np.array(embeddings, dtype='f')
+
+    @on_exception(expo, HTTPRequests.exceptions.RequestException, max_time=30)
+    def _get_gemini_embedding(self, texts: List[str]) -> np.ndarray:
+        """Fetch embeddings from the Gemini API via OpenAI-compatible endpoint."""
+        batch_size = 2048
+        if len(texts) > batch_size:
+            all_embeddings = []
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                batch_embeddings = self._get_gemini_embedding(batch_texts)
                 all_embeddings.append(batch_embeddings)
             return np.vstack(all_embeddings)
         texts = [text.replace("\n", " ") for text in texts]

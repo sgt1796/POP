@@ -457,6 +457,7 @@ vecs = embedder.get_embedding(["hello world"])
 Supported modes:
 
 * OpenAI embeddings
+* Gemini embeddings (via OpenAI-compatible Gemini endpoint)
 * JinaAI embeddings
 * Local HuggingFace model embeddings (cpu/gpu)
 

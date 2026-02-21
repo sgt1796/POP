@@ -49,6 +49,47 @@ def test_jina_embedding_stub(monkeypatch):
     assert vecs.shape == (2, 3)
 
 
+def test_gemini_embedding_stub(monkeypatch):
+    class DummyEmbeddings:
+        def create(self, input, model):
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.7, 0.8, 0.9]) for _ in input])
+
+    class DummyClient:
+        def __init__(self, api_key=None, base_url=None):
+            self.embeddings = DummyEmbeddings()
+
+    monkeypatch.setattr(emb_mod, "openai", SimpleNamespace(Client=DummyClient))
+    embedder = Embedder(use_api="gemini", model_name="gemini-embedding-001")
+    vecs = embedder.get_embedding(["hello", "world"])
+    assert isinstance(vecs, np.ndarray)
+    assert vecs.shape == (2, 3)
+
+
+def test_gemini_default_model_and_client_config(monkeypatch):
+    seen = {"api_key": None, "base_url": None, "model": None}
+
+    class DummyEmbeddings:
+        def create(self, input, model):
+            seen["model"] = model
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2]) for _ in input])
+
+    class DummyClient:
+        def __init__(self, api_key=None, base_url=None):
+            seen["api_key"] = api_key
+            seen["base_url"] = base_url
+            self.embeddings = DummyEmbeddings()
+
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
+    monkeypatch.setattr(emb_mod, "openai", SimpleNamespace(Client=DummyClient))
+    embedder = Embedder(use_api="gemini")
+    vecs = embedder.get_embedding(["x"])
+    assert isinstance(vecs, np.ndarray)
+    assert vecs.shape == (1, 2)
+    assert seen["api_key"] == "gemini-test-key"
+    assert seen["base_url"] == emb_mod.GEMINI_OPENAI_BASE_URL
+    assert seen["model"] == "gemini-embedding-001"
+
+
 def test_get_embedding_requires_list(monkeypatch):
     class DummyEmbeddings:
         def create(self, input, model):
