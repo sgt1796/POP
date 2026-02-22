@@ -16,8 +16,8 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/sgt1796/POP",
 
-    # This will pick up the 'POP' package directory
-    packages=find_packages(),
+    # Only ship POP packages from this repository.
+    packages=find_packages(include=["POP", "POP.*"]),
 
     include_package_data=True,
     package_data={
