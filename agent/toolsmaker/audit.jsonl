@@ -1,6 +1,0 @@
-{"type": "tool_build_requested", "toolName": "write_file", "request": {"purpose": "Write content to a file", "inputs": {}, "outputs": [], "capabilities": ["fs_write"], "risk": "medium"}, "timestamp": 1770946472.2292655}
-{"type": "tool_build_generated", "toolName": "write_file", "version": 1, "codePath": "agent/toolsmaker/generated/write_file_v1.py", "timestamp": 1770946472.2425478}
-{"type": "tool_build_validated", "toolName": "write_file", "version": 1, "validation": {"spec": {"ok": true, "errors": [], "warnings": []}, "code": {"ok": true, "errors": [], "warnings": []}}, "timestamp": 1770946472.2476006}
-{"type": "tool_approval_required", "toolName": "write_file", "version": 1, "timestamp": 1770946472.252799}
-{"type": "tool_activated", "toolName": "write_file", "version": 1, "timestamp": 1770946509.4710858}
-{"type": "tool_activated", "toolName": "write_file", "version": 1, "timestamp": 1770946512.6611552}

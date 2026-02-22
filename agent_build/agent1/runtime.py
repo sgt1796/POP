@@ -1,12 +1,28 @@
 import os
+from typing import List
 
 from POP.embedder import Embedder
 from POP.stream import stream
 
 from agent import Agent
-from agent.tools import BashExecConfig, BashExecTool, FastTool, SlowTool, WebSnapshotTool
+from agent.agent_types import AgentTool
+from agent.tools import (
+    BashExecConfig,
+    BashExecTool,
+    FastTool,
+    GmailFetchTool,
+    MemorySearchTool,
+    PdfMergeTool,
+    SlowTool,
+    ToolsmakerTool,
+    WebSnapshotTool,
+)
 
-from .approvals import BashExecApprovalPrompter, ToolsmakerApprovalSubscriber
+from .approvals import (
+    BashExecApprovalPrompter,
+    ToolsmakerApprovalSubscriber,
+    ToolsmakerAutoContinueSubscriber,
+)
 from .constants import BASH_GIT_READ_SUBCOMMANDS, BASH_READ_COMMANDS, BASH_WRITE_COMMANDS
 from .env_utils import (
     parse_bool_env,
@@ -27,11 +43,33 @@ from .memory import (
     format_memory_sections,
 )
 from .message_utils import extract_latest_assistant_text
-from .tools import MemorySearchTool, ToolsmakerTool
+from .prompting import build_system_prompt, resolve_execution_profile
 
 
 async def _read_input(prompt: str) -> str:
     return input(prompt)
+
+
+def build_runtime_tools(
+    *,
+    memory_search_tool: MemorySearchTool,
+    toolsmaker_tool: ToolsmakerTool,
+    bash_exec_tool: BashExecTool,
+    gmail_fetch_tool: GmailFetchTool,
+    pdf_merge_tool: PdfMergeTool,
+    include_demo_tools: bool,
+) -> List[AgentTool]:
+    tools: List[AgentTool] = [
+        WebSnapshotTool(),
+        memory_search_tool,
+        toolsmaker_tool,
+        bash_exec_tool,
+        gmail_fetch_tool,
+        pdf_merge_tool,
+    ]
+    if include_demo_tools:
+        tools.extend([SlowTool(), FastTool()])
+    return tools
 
 
 async def main() -> None:
@@ -52,6 +90,8 @@ async def main() -> None:
     toolsmaker_caps = parse_toolsmaker_allowed_capabilities(os.getenv("POP_AGENT_TOOLSMAKER_ALLOWED_CAPS"))
     toolsmaker_tool = ToolsmakerTool(agent=agent, allowed_capabilities=toolsmaker_caps)
     workspace_root = os.path.realpath(os.getcwd())
+    gmail_fetch_tool = GmailFetchTool(workspace_root=workspace_root)
+    pdf_merge_tool = PdfMergeTool(workspace_root=workspace_root)
     bash_allowed_roots = parse_path_list_env(
         "POP_AGENT_BASH_ALLOWED_ROOTS",
         default_paths=[workspace_root],
@@ -84,32 +124,45 @@ async def main() -> None:
     bash_read_csv = sorted_csv(BASH_READ_COMMANDS)
     bash_write_csv = sorted_csv(BASH_WRITE_COMMANDS)
     bash_git_csv = sorted_csv(BASH_GIT_READ_SUBCOMMANDS)
+    execution_profile = resolve_execution_profile(os.getenv("POP_AGENT_EXECUTION_PROFILE", "balanced"))
+    toolsmaker_manual_approval = parse_bool_env("POP_AGENT_TOOLSMAKER_PROMPT_APPROVAL", True)
+    toolsmaker_auto_activate = parse_bool_env("POP_AGENT_TOOLSMAKER_AUTO_ACTIVATE", True)
+    toolsmaker_auto_continue = parse_bool_env("POP_AGENT_TOOLSMAKER_AUTO_CONTINUE", True)
+    include_demo_tools = parse_bool_env("POP_AGENT_INCLUDE_DEMO_TOOLS", False)
+    log_level = os.getenv("POP_AGENT_LOG_LEVEL", "quiet")
     bash_exec_tool.description = (
         "Run one safe shell command without a shell. "
         f"Allowed read commands: {bash_read_csv}. "
         f"Allowed write commands: {bash_write_csv}. "
         f"For git, allowed subcommands: {bash_git_csv}. "
-        "Write commands require approval."
+        + (
+            "Write commands require approval."
+            if bash_prompt_approval
+            else "Without approval prompts, medium/high-risk write commands are denied."
+        )
     )
     agent.set_system_prompt(
-        "You are a helpful assistant. "
-        "Use tools when they improve accuracy or when the user asks for external actions. "
-        "Prefer existing tools first, especially bash_exec for filesystem/shell inspection tasks. "
-        "Use toolsmaker only when no existing tool can safely complete the request. "
-        "When existing tools are insufficient, use the toolsmaker tool to create minimal-capability tools. "
-        "Follow the lifecycle: create first, then approve, then activate. "
-        "When calling toolsmaker create, always include intent.capabilities; "
-        "fs_read/fs_write require allowed_paths and http requires allowed_domains. "
-        f"Bash_exec allowlist (read): {bash_read_csv}. "
-        f"Bash_exec allowlist (write): {bash_write_csv}. "
-        f"Bash_exec git subcommands: {bash_git_csv}. "
-        "Never call bash_exec with a command/subcommand outside those allowlists."
+        build_system_prompt(
+            bash_read_csv=bash_read_csv,
+            bash_write_csv=bash_write_csv,
+            bash_git_csv=bash_git_csv,
+            bash_prompt_approval=bash_prompt_approval,
+            toolsmaker_manual_approval=toolsmaker_manual_approval,
+            toolsmaker_auto_continue=toolsmaker_auto_continue,
+            execution_profile=execution_profile,
+            workspace_root=workspace_root,
+        )
     )
-    agent.set_tools([SlowTool(), FastTool(), WebSnapshotTool(), memory_search_tool, toolsmaker_tool, bash_exec_tool])
-
-    log_level = os.getenv("POP_AGENT_LOG_LEVEL", "quiet")
-    toolsmaker_manual_approval = parse_bool_env("POP_AGENT_TOOLSMAKER_PROMPT_APPROVAL", True)
-    toolsmaker_auto_activate = parse_bool_env("POP_AGENT_TOOLSMAKER_AUTO_ACTIVATE", True)
+    agent.set_tools(
+        build_runtime_tools(
+            memory_search_tool=memory_search_tool,
+            toolsmaker_tool=toolsmaker_tool,
+            bash_exec_tool=bash_exec_tool,
+            gmail_fetch_tool=gmail_fetch_tool,
+            pdf_merge_tool=pdf_merge_tool,
+            include_demo_tools=include_demo_tools,
+        )
+    )
 
     unsubscribe_log = agent.subscribe(make_event_logger(log_level))
     unsubscribe_memory = agent.subscribe(memory_subscriber.on_event)
@@ -119,6 +172,9 @@ async def main() -> None:
             auto_activate_default=toolsmaker_auto_activate,
         )
         unsubscribe_approval = agent.subscribe(approval_subscriber.on_event)
+    elif toolsmaker_auto_continue:
+        auto_continue_subscriber = ToolsmakerAutoContinueSubscriber(agent=agent)
+        unsubscribe_approval = agent.subscribe(auto_continue_subscriber.on_event)
     else:
         unsubscribe_approval = lambda: None
 
@@ -133,8 +189,15 @@ async def main() -> None:
             "[toolsmaker] manual approval prompts: on "
             f"(default auto-activate={'on' if toolsmaker_auto_activate else 'off'})"
         )
+        print("[toolsmaker] auto-continue: off (manual approval mode)")
     else:
         print("[toolsmaker] manual approval prompts: off")
+        if toolsmaker_auto_continue:
+            print("[toolsmaker] auto-continue: on")
+        else:
+            print("[toolsmaker] auto-continue: off")
+    print(f"[agent] execution profile: {execution_profile}")
+    print(f"[tools] demo tools: {'on' if include_demo_tools else 'off'}")
     if bash_prompt_approval:
         print("[bash_exec] approval prompts: on")
     else:

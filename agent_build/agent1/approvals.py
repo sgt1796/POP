@@ -3,6 +3,34 @@ from typing import Any, Dict, Optional, Set, Tuple
 from agent import Agent
 
 
+def _extract_result_details(result: Any) -> Optional[Dict[str, Any]]:
+    details = getattr(result, "details", None)
+    if isinstance(details, dict):
+        return details
+    if isinstance(result, dict):
+        result_details = result.get("details")
+        if isinstance(result_details, dict):
+            return result_details
+    return None
+
+
+def _read_toolsmaker_create_details(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if event.get("type") != "tool_execution_end":
+        return None
+    if str(event.get("toolName", "")).strip() != "toolsmaker":
+        return None
+    details = _extract_result_details(event.get("result"))
+    if not isinstance(details, dict):
+        return None
+    if not bool(details.get("ok")):
+        return None
+    if str(details.get("action", "")).strip().lower() != "create":
+        return None
+    if str(details.get("status", "")).strip().lower() != "approval_required":
+        return None
+    return details
+
+
 class ToolsmakerApprovalSubscriber:
     """Prompt the terminal user for tool approval after toolsmaker create calls."""
 
@@ -12,21 +40,7 @@ class ToolsmakerApprovalSubscriber:
         self._handled: Set[Tuple[str, int]] = set()
 
     def _read_details(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if event.get("type") != "tool_execution_end":
-            return None
-        if str(event.get("toolName", "")).strip() != "toolsmaker":
-            return None
-        result = event.get("result")
-        details = getattr(result, "details", None)
-        if not isinstance(details, dict):
-            return None
-        if not bool(details.get("ok")):
-            return None
-        if str(details.get("action", "")).strip().lower() != "create":
-            return None
-        if str(details.get("status", "")).strip().lower() != "approval_required":
-            return None
-        return details
+        return _read_toolsmaker_create_details(event)
 
     def on_event(self, event: Dict[str, Any]) -> None:
         try:
@@ -78,6 +92,46 @@ class ToolsmakerApprovalSubscriber:
                 print(f"[toolsmaker] rejected status={rejected.status} reason={reason}")
         except Exception as exc:
             print(f"[toolsmaker] manual approval warning: {exc}")
+
+
+class ToolsmakerAutoContinueSubscriber:
+    """Auto-approve and activate newly generated tools when manual prompts are disabled."""
+
+    def __init__(self, agent: Agent) -> None:
+        self.agent = agent
+        self._handled: Set[Tuple[str, int]] = set()
+
+    def _read_details(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        return _read_toolsmaker_create_details(event)
+
+    def on_event(self, event: Dict[str, Any]) -> None:
+        try:
+            details = self._read_details(event)
+            if details is None:
+                return
+            name = str(details.get("name", "")).strip()
+            version = int(details.get("version", 0) or 0)
+            if not name or version <= 0:
+                return
+
+            key = (name, version)
+            if key in self._handled:
+                return
+            self._handled.add(key)
+
+            try:
+                approved = self.agent.approve_dynamic_tool(name=name, version=version)
+                print(f"[toolsmaker] auto-approved tool={name} version={version} status={approved.status}")
+            except Exception as exc:
+                print(f"[toolsmaker] auto-approval warning for {name} v{version}: {exc}")
+
+            try:
+                activated = self.agent.activate_tool_version(name=name, version=version)
+                print(f"[toolsmaker] auto-activated tool={activated.name} version={version}")
+            except Exception as exc:
+                print(f"[toolsmaker] auto-activation warning for {name} v{version}: {exc}")
+        except Exception as exc:
+            print(f"[toolsmaker] auto-continue warning: {exc}")
 
 
 class BashExecApprovalPrompter:

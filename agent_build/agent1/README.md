@@ -2,6 +2,28 @@
 
 This section is a context dump for continuing work in a new session.
 
+## 0. Change note (2026-02-22, execution-first upgrade)
+
+This runtime was upgraded to improve task completion reliability while keeping existing safety defaults.
+
+Highlights:
+
+* Added `prompting.py` to build a stronger execution-first system prompt with profile-aware behavior (`balanced`, `aggressive`, `conservative`).
+* Added non-interactive `ToolsmakerAutoContinueSubscriber` for non-manual mode so create results can auto-advance to approve + activate.
+* Updated runtime tool assembly so demo tools (`slow`, `fast`) are disabled by default and enabled only with `POP_AGENT_INCLUDE_DEMO_TOOLS=true`.
+* Added first-class static workflow tools:
+  - `gmail_fetch` (search Gmail + download attachments)
+  - `pdf_merge` (merge PDFs for print workflows)
+* Moved `MemorySearchTool` and `ToolsmakerTool` implementations to `agent/tools/` and kept `agent_build/agent1/tools.py` as a compatibility shim.
+* Added new env controls:
+  - `POP_AGENT_EXECUTION_PROFILE`
+  - `POP_AGENT_TOOLSMAKER_AUTO_CONTINUE`
+  - `POP_AGENT_INCLUDE_DEMO_TOOLS`
+* Added focused tests:
+  - `tests/test_agent1_prompting.py`
+  - `tests/test_agent1_approvals.py`
+  - `tests/test_agent1_runtime.py`
+
 ## 1. What was requested
 
 User request:
@@ -43,10 +65,12 @@ Created files:
   Event logger factory with `quiet/messages/stream/debug` behaviors.
 * `memory.py`
   In-memory and disk-backed memory stores, retrieval logic, ingestion worker, and memory subscriber.
+* `prompting.py`
+  System-prompt builder with execution profiles and runtime-policy hints.
 * `tools.py`
-  `MemorySearchTool` and `ToolsmakerTool` (create/approve/activate/reject/list lifecycle).
+  Compatibility re-exports for `MemorySearchTool` and `ToolsmakerTool` (implementations now in `agent/tools/agent1_tools.py`).
 * `approvals.py`
-  Interactive approval prompts for `toolsmaker` and `bash_exec`.
+  Interactive approval prompts plus non-interactive auto-continue for `toolsmaker`, and approval prompts for `bash_exec`.
 
 ## 4. Feature parity checklist (agent0 -> agent1)
 
@@ -64,6 +88,13 @@ Preserved:
 * Same event logging behavior.
 * Same interactive terminal loop and shutdown behavior.
 
+Enhancements:
+
+* Stronger execution-first system prompt generation in `prompting.py`.
+* Optional non-interactive toolsmaker auto-continue when manual prompts are disabled.
+* Demo tools (`slow`, `fast`) are now opt-in via `POP_AGENT_INCLUDE_DEMO_TOOLS`.
+* First-class Gmail + PDF workflow support via `gmail_fetch` and `pdf_merge`.
+
 ## 5. Runtime/environment controls (important)
 
 Toolsmaker:
@@ -74,6 +105,8 @@ Toolsmaker:
   Default: `true`
 * `POP_AGENT_TOOLSMAKER_AUTO_ACTIVATE`
   Default: `true`
+* `POP_AGENT_TOOLSMAKER_AUTO_CONTINUE`
+  Default: `true` (effective when manual approval prompts are disabled)
 
 Bash exec:
 
@@ -94,6 +127,10 @@ General:
   Default: `quiet` (`messages`, `stream`, `debug` also supported)
 * `POP_AGENT_MEMORY_TOP_K`
   Default: `3`
+* `POP_AGENT_EXECUTION_PROFILE`
+  Default: `balanced` (`balanced`, `aggressive`, `conservative`)
+* `POP_AGENT_INCLUDE_DEMO_TOOLS`
+  Default: `false` (enables `slow` and `fast` when set to true)
 
 ## 6. Commands for next session
 
