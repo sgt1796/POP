@@ -92,10 +92,36 @@ class OllamaClient(LLMClient):
         try:
             response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
             response.raise_for_status()
-            content = response.json().get("response", "")
+            response_json = response.json()
+            content = response_json.get("response", "")
+            usage = self._extract_usage(response_json)
         except Exception as exc:
             raise RuntimeError(f"OllamaClient error: {exc}") from exc
-        return self._wrap_response(content)
+        return self._wrap_response(content, usage=usage)
+
+    def _extract_usage(self, response_json: Dict[str, Any]) -> Dict[str, Any]:
+        prompt_tokens = response_json.get("prompt_eval_count")
+        completion_tokens = response_json.get("eval_count")
+        total_tokens = response_json.get("total_tokens")
+        try:
+            prompt_tokens = int(prompt_tokens) if prompt_tokens is not None else None
+        except (TypeError, ValueError):
+            prompt_tokens = None
+        try:
+            completion_tokens = int(completion_tokens) if completion_tokens is not None else None
+        except (TypeError, ValueError):
+            completion_tokens = None
+        try:
+            total_tokens = int(total_tokens) if total_tokens is not None else None
+        except (TypeError, ValueError):
+            total_tokens = None
+        if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+            total_tokens = prompt_tokens + completion_tokens
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
 
     def _normalize_schema(self, fmt: Any) -> Any:
         import json, os
@@ -112,7 +138,7 @@ class OllamaClient(LLMClient):
             return fmt
         raise TypeError("response_format must be a JSON schema dict, a JSON string, or a file path")
 
-    def _wrap_response(self, content: str) -> Any:
+    def _wrap_response(self, content: str, usage: Dict[str, Any] | None = None) -> Any:
         class Message:
             def __init__(self, content: str) -> None:
                 self.content = content
@@ -121,9 +147,10 @@ class OllamaClient(LLMClient):
             def __init__(self, message: Message) -> None:
                 self.message = message
         class Response:
-            def __init__(self, content: str) -> None:
+            def __init__(self, content: str, usage: Dict[str, Any] | None) -> None:
                 self.choices = [Choice(Message(content))]
-        return Response(content)
+                self.usage = usage
+        return Response(content, usage)
 
 
 __all__ = ["OllamaClient"]

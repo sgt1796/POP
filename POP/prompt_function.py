@@ -15,13 +15,16 @@ from __future__ import annotations
 
 import re
 import json
-from dataclasses import dataclass
-from os import getenv, path
+import copy
+import time
+from collections import deque
+from os import path
 from typing import List, Dict, Any, Optional, Union
 
 from .providers.llm_client import LLMClient
 from .api_registry import get_client
 from .models import DEFAULT_MODEL
+from .usage_tracking import build_usage_record, accumulate_totals, init_usage_totals
 
 
 class PromptFunction:
@@ -72,6 +75,9 @@ class PromptFunction:
         else:
             self.temperature = 0.0
         self.last_response: Any = None
+        self.last_usage: Optional[Dict[str, Any]] = None
+        self.usage_history: "deque[Dict[str, Any]]" = deque(maxlen=200)
+        self.usage_totals: Dict[str, Any] = init_usage_totals()
         # Provide some debug output so users know what client and model are in use
         print(
             f"[PromptFunction] Using client: {self.client.__class__.__name__}, using model: {self.client.model_name}"
@@ -146,6 +152,10 @@ class PromptFunction:
         if images is not None:
             call_kwargs["images"] = images
 
+        request_start = time.time()
+        provider_name = self._resolve_provider_name()
+        model_name = str(model or getattr(self.client, "model_name", ""))
+
         # Execute the call
         try:
             raw_response = self.client.chat_completion(**call_kwargs)
@@ -156,6 +166,21 @@ class PromptFunction:
                 f"model: {model}\ntemperature: {temp}\nprompt: {formatted_prompt}\nsys: {system_extra}\n"
                 f"format: {fmt}\ntools: {tools}\nimages: {images}"
             )
+            self.last_response = None
+            usage_record = build_usage_record(
+                response=None,
+                messages=messages,
+                reply_text="",
+                provider=provider_name,
+                model=model_name,
+                tools=tools,
+                response_format=fmt,
+                latency_ms=int((time.time() - request_start) * 1000),
+                timestamp=time.time(),
+            )
+            self.last_usage = usage_record
+            self.usage_history.append(usage_record)
+            accumulate_totals(self.usage_totals, usage_record)
             return ""
         # Save entire response for later inspection
         self.last_response = raw_response
@@ -174,7 +199,33 @@ class PromptFunction:
         except Exception:
             # Fallback: attempt to coerce response to string
             reply_content = str(raw_response)
+
+        usage_record = build_usage_record(
+            response=raw_response,
+            messages=messages,
+            reply_text=reply_content,
+            provider=provider_name,
+            model=model_name,
+            tools=tools,
+            response_format=fmt,
+            latency_ms=int((time.time() - request_start) * 1000),
+            timestamp=time.time(),
+        )
+        self.last_usage = usage_record
+        self.usage_history.append(usage_record)
+        accumulate_totals(self.usage_totals, usage_record)
         return reply_content
+
+    def _resolve_provider_name(self) -> str:
+        provider_name = getattr(self.client, "provider_name", None)
+        if isinstance(provider_name, str) and provider_name.strip():
+            return provider_name.strip().lower()
+        class_name = self.client.__class__.__name__
+        if class_name.lower().endswith("client"):
+            class_name = class_name[:-6]
+        normalized = class_name.lower()
+        alias = {"localpytorch": "local"}
+        return alias.get(normalized, normalized)
 
     def _prepare_prompt(self, *args: str, **kwargs: Any) -> str:
         """Prepare the prompt by injecting dynamic arguments.
@@ -368,6 +419,10 @@ class PromptFunction:
     def set_temperature(self, temperature: float) -> None:
         """Set the sampling temperature for the next execution."""
         self.temperature = temperature
+
+    def get_usage_summary(self) -> Dict[str, Any]:
+        """Return a defensive copy of cumulative usage totals."""
+        return copy.deepcopy(self.usage_totals)
 
     def save(self, file_path: str) -> None:
         """Save the base prompt to a file."""

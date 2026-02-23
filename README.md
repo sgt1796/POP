@@ -248,6 +248,36 @@ This uses a Fabric-inspired meta-prompt bundled in the `POP/prompts/` directory.
 
 ---
 
+## 7.5. Token Usage Tracking
+
+POP tracks usage per call at the framework level.
+
+After each `execute()` call:
+
+* `pf.last_usage` stores the normalized usage record for the latest request.
+* `pf.usage_history` stores a bounded history (`maxlen=200`) of usage records.
+* `pf.get_usage_summary()` returns cumulative totals for that `PromptFunction` instance.
+
+```python
+from POP import PromptFunction
+
+pf = PromptFunction(prompt="Give me 3 names for a <<<thing>>>.", client="openai")
+result = pf.execute(thing="robot")
+
+print(result)
+print(pf.last_usage["source"])        # provider | estimate | hybrid | none
+print(pf.last_usage["total_tokens"])  # canonical total used by POP
+print(pf.get_usage_summary())         # cumulative counters
+```
+
+Usage is provider-first:
+
+* Provider-reported usage is used when available.
+* POP estimates tokens when provider usage is missing.
+* POP marks anomaly metadata when provider and estimate differ significantly.
+
+---
+
 # 8. Provider Registry
 
 Use the registry to list providers/models or instantiate clients.

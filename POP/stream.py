@@ -14,6 +14,7 @@ import time
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from .api_registry import get_client, get_default_model
+from .usage_tracking import build_usage_record
 
 
 def _message_to_text(message: Dict[str, Any]) -> str:
@@ -229,6 +230,7 @@ class MessageEventStream:
         if self._started:
             return
         self._started = True
+        request_start = time.time()
         partial = self._build_partial()
         yield {"type": "start", "partial": dict(partial)}
         yield {"type": "text_start", "contentIndex": 0, "partial": dict(partial)}
@@ -238,6 +240,24 @@ class MessageEventStream:
             error_msg = dict(partial)
             error_msg["stopReason"] = "error"
             error_msg["errorMessage"] = str(exc)
+            provider = self._model.get("provider") or self._model.get("api") or ""
+            model_id = self._model.get("id") or get_default_model(provider) or ""
+            messages = _context_to_messages(self._context, provider)
+            tools = self._options.get("tools") if isinstance(self._options, dict) else None
+            if tools is None:
+                tools = self._context.get("tools")
+            response_format = self._options.get("response_format") if isinstance(self._options, dict) else None
+            error_msg["usage"] = build_usage_record(
+                response=None,
+                messages=messages,
+                reply_text="",
+                provider=provider,
+                model=model_id,
+                tools=tools,
+                response_format=response_format,
+                latency_ms=int((time.time() - request_start) * 1000),
+                timestamp=time.time(),
+            )
             self._final_message = error_msg
             yield {"type": "error", "error": error_msg}
             return
@@ -254,6 +274,28 @@ class MessageEventStream:
         content_items.extend(tool_calls)
         final["content"] = content_items
         final["stopReason"] = "stop"
+        provider = self._model.get("provider") or self._model.get("api") or ""
+        model_id = self._model.get("id") or get_default_model(provider) or ""
+        messages = _context_to_messages(self._context, provider)
+        tools = self._options.get("tools") if isinstance(self._options, dict) else None
+        if tools is None:
+            tools = self._context.get("tools")
+        response_format = self._options.get("response_format") if isinstance(self._options, dict) else None
+        reply_for_usage = text
+        if tool_calls:
+            serialized_calls = json.dumps(tool_calls, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            reply_for_usage = f"{text}\n{serialized_calls}" if text else serialized_calls
+        final["usage"] = build_usage_record(
+            response=response,
+            messages=messages,
+            reply_text=reply_for_usage,
+            provider=provider,
+            model=model_id,
+            tools=tools,
+            response_format=response_format,
+            latency_ms=int((time.time() - request_start) * 1000),
+            timestamp=time.time(),
+        )
         self._final_message = final
         yield {"type": "done", "message": final}
 

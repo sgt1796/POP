@@ -96,3 +96,43 @@ def test_save_writes_prompt(tmp_path, fake_response):
     target = tmp_path / "prompt.txt"
     pf.save(str(target))
     assert target.read_text(encoding="utf-8") == "Hello"
+
+
+def test_execute_populates_usage_metadata(fake_response):
+    client = DummyClient(fake_response("ok"))
+    pf = PromptFunction(prompt="Hello <<<name>>>", client=client)
+
+    result = pf.execute(name="World")
+
+    assert result == "ok"
+    assert pf.last_usage is not None
+    assert pf.last_usage["provider"] == "dummy"
+    assert pf.last_usage["model"] == "dummy-model"
+    assert pf.last_usage["source"] in {"estimate", "hybrid", "provider"}
+    assert len(pf.usage_history) == 1
+    assert pf.usage_history[0] == pf.last_usage
+
+
+def test_usage_totals_accumulate(fake_response):
+    client = DummyClient(fake_response("ok"))
+    pf = PromptFunction(prompt="Hi <<<name>>>", client=client)
+
+    pf.execute(name="A")
+    pf.execute(name="B")
+    summary = pf.get_usage_summary()
+
+    assert summary["calls"] == 2
+    assert summary["input_tokens"] >= 0
+    assert summary["output_tokens"] >= 0
+    assert summary["total_tokens"] >= 0
+
+
+def test_usage_history_is_bounded(fake_response):
+    client = DummyClient(fake_response("ok"))
+    pf = PromptFunction(prompt="Hi <<<name>>>", client=client)
+
+    for idx in range(205):
+        pf.execute(name=str(idx))
+
+    assert pf.usage_history.maxlen == 200
+    assert len(pf.usage_history) == 200
