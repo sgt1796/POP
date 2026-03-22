@@ -16,6 +16,7 @@ if not load_dotenv():
 # Mapping from provider identifier to the environment variable used
 REQUIRED_KEYS = {
     "openai": "OPENAI_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "doubao": "DOUBAO_API_KEY",

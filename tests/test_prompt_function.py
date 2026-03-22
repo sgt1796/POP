@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from POP.prompt_function import PromptFunction
+from POP.providers.claude_client import ClaudeClient
 from POP.providers.llm_client import LLMClient
 
 
@@ -21,6 +24,35 @@ class DummyClient(LLMClient):
             **kwargs,
         }
         return self.response
+
+
+class _FakeChatCompletions:
+    def __init__(self, content: str = "ok") -> None:
+        self.payloads = []
+        self.content = content
+
+    def create(self, **payload):
+        self.payloads.append(payload)
+        message = SimpleNamespace(content=self.content, tool_calls=None)
+        choice = SimpleNamespace(message=message)
+        return SimpleNamespace(choices=[choice])
+
+
+class _FakeOpenAI:
+    last_instance = None
+    next_content = "ok"
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.chat = SimpleNamespace(completions=_FakeChatCompletions(content=self.next_content))
+        _FakeOpenAI.last_instance = self
+
+
+def _last_claude_payload() -> dict:
+    instance = _FakeOpenAI.last_instance
+    assert instance is not None
+    return instance.chat.completions.payloads[-1]
 
 
 def test_prepare_prompt_replacements(fake_response):
@@ -51,6 +83,17 @@ def test_execute_passes_options_and_defaults(fake_response):
     assert client.last_call["tool_choice"] == "auto"
     assert client.last_call["response_format"] == fmt
     assert client.last_call["images"] == images
+
+
+def test_execute_omits_empty_tool_payload(fake_response):
+    client = DummyClient(fake_response("ok"))
+    pf = PromptFunction(prompt="Hello <<<name>>>", client=client)
+
+    pf.execute(name="World", tools=[])
+
+    assert client.last_call is not None
+    assert "tools" not in client.last_call
+    assert "tool_choice" not in client.last_call
 
 
 def test_execute_returns_tool_call_arguments(fake_response):
@@ -88,6 +131,37 @@ def test_generate_schema_default_prompt_saves(tmp_path, monkeypatch):
     assert schema["name"] == "test"
     saved = tmp_path / "schemas" / "test.json"
     assert saved.exists()
+
+
+def test_execute_warns_and_degrades_fmt_for_claude(monkeypatch):
+    monkeypatch.setattr("POP.providers.claude_client.OpenAI", _FakeOpenAI)
+    _FakeOpenAI.next_content = "ok"
+    client = ClaudeClient(model="claude-haiku-4-5")
+    pf = PromptFunction(prompt="Hello <<<name>>>", client=client)
+    fmt = {"type": "json_schema", "json_schema": {"name": "x", "schema": {"type": "object"}}}
+
+    with pytest.warns(UserWarning, match="response_format"):
+        result = pf.execute(name="World", fmt=fmt)
+
+    assert result == "ok"
+    payload = _last_claude_payload()
+    assert "response_format" not in payload
+    assert pf.last_usage is not None
+    assert pf.last_usage["provider"] == "claude"
+
+
+def test_generate_schema_falls_back_to_prompt_only_json_for_claude(monkeypatch):
+    monkeypatch.setattr("POP.providers.claude_client.OpenAI", _FakeOpenAI)
+    _FakeOpenAI.next_content = 'Here is the schema:\n{"name":"test","schema":{"type":"object"}}\nThanks!'
+    pf = PromptFunction(prompt="Return the square of an integer.", client=ClaudeClient(model="claude-haiku-4-5"))
+
+    with pytest.warns(UserWarning, match="prompt-only JSON generation"):
+        schema = pf.generate_schema(save=False)
+
+    payload = _last_claude_payload()
+    assert "response_format" not in payload
+    assert "Return only a valid JSON object" in payload["messages"][1]["content"]
+    assert schema["name"] == "test"
 
 
 def test_save_writes_prompt(tmp_path, fake_response):

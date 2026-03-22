@@ -17,6 +17,7 @@ import re
 import json
 import copy
 import time
+import warnings
 from collections import deque
 from os import path
 from typing import List, Dict, Any, Optional, Union
@@ -116,10 +117,11 @@ class PromptFunction:
         system_extra = kwargs.pop("sys", "")
         fmt = kwargs.pop("fmt", None)
         tools = kwargs.pop("tools", None)
+        has_tools = bool(tools)
         temp = kwargs.pop("temp", self.temperature)
         images = kwargs.pop("images", None)
         tool_choice = kwargs.pop("tool_choice", None)
-        if tools and not tool_choice:
+        if has_tools and not tool_choice:
             tool_choice = "auto"
 
         # Prepare the prompt with dynamic injections
@@ -146,9 +148,10 @@ class PromptFunction:
         }
         if fmt is not None:
             call_kwargs["response_format"] = fmt
-        if tools is not None:
+        if has_tools:
             call_kwargs["tools"] = tools
-            call_kwargs["tool_choice"] = tool_choice
+            if tool_choice is not None:
+                call_kwargs["tool_choice"] = tool_choice
         if images is not None:
             call_kwargs["images"] = images
 
@@ -167,14 +170,19 @@ class PromptFunction:
                 f"format: {fmt}\ntools: {tools}\nimages: {images}"
             )
             self.last_response = None
+            usage_messages, usage_tools, usage_response_format = self._resolve_usage_inputs(
+                messages=messages,
+                tools=tools,
+                response_format=fmt,
+            )
             usage_record = build_usage_record(
                 response=None,
-                messages=messages,
+                messages=usage_messages,
                 reply_text="",
                 provider=provider_name,
                 model=model_name,
-                tools=tools,
-                response_format=fmt,
+                tools=usage_tools,
+                response_format=usage_response_format,
                 latency_ms=int((time.time() - request_start) * 1000),
                 timestamp=time.time(),
             )
@@ -200,14 +208,19 @@ class PromptFunction:
             # Fallback: attempt to coerce response to string
             reply_content = str(raw_response)
 
+        usage_messages, usage_tools, usage_response_format = self._resolve_usage_inputs(
+            messages=messages,
+            tools=tools,
+            response_format=fmt,
+        )
         usage_record = build_usage_record(
             response=raw_response,
-            messages=messages,
+            messages=usage_messages,
             reply_text=reply_content,
             provider=provider_name,
             model=model_name,
-            tools=tools,
-            response_format=fmt,
+            tools=usage_tools,
+            response_format=usage_response_format,
             latency_ms=int((time.time() - request_start) * 1000),
             timestamp=time.time(),
         )
@@ -226,6 +239,22 @@ class PromptFunction:
         normalized = class_name.lower()
         alias = {"localpytorch": "local"}
         return alias.get(normalized, normalized)
+
+    def _resolve_usage_inputs(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Any,
+        response_format: Any,
+    ) -> tuple[List[Dict[str, Any]], Any, Any]:
+        request_meta = getattr(self.client, "last_request_meta", None)
+        if not isinstance(request_meta, dict):
+            return messages, tools, response_format
+        usage_messages = request_meta.get("messages", messages)
+        usage_tools = request_meta["tools"] if "tools" in request_meta else tools
+        usage_response_format = (
+            request_meta["response_format"] if "response_format" in request_meta else response_format
+        )
+        return usage_messages, usage_tools, usage_response_format
 
     def _prepare_prompt(self, *args: str, **kwargs: Any) -> str:
         """Prepare the prompt by injecting dynamic arguments.
@@ -377,18 +406,33 @@ class PromptFunction:
             {"role": "user", "content": "Description:\n" + description},
         ]
         # Execute call using the chosen model; response_format holds the meta_schema
-        response = self.client.chat_completion(
-            messages=messages,
-            model=model,
-            temperature=self.temperature,
-            response_format=meta_schema,
-        )
+        call_kwargs: Dict[str, Any] = {
+            "messages": messages,
+            "model": model,
+            "temperature": self.temperature,
+        }
+        if getattr(self.client, "supports_response_format", True):
+            call_kwargs["response_format"] = meta_schema
+        else:
+            warnings.warn(
+                "This provider does not enforce `response_format`; POP is using prompt-only JSON generation.",
+                UserWarning,
+                stacklevel=2,
+            )
+            messages[-1]["content"] += (
+                "\n\nReturn only a valid JSON object with top-level keys `name` and `schema`. "
+                "Do not wrap the response in markdown."
+            )
+        response = self.client.chat_completion(**call_kwargs)
         # Parse JSON from the model's response
         try:
             content = response.choices[0].message.content
         except Exception:
             content = str(response)
-        parsed_schema = json.loads(content)
+        try:
+            parsed_schema = json.loads(content)
+        except json.JSONDecodeError:
+            parsed_schema = json.loads(self._extract_first_json_object(str(content)))
         # Optionally save to a file under schemas/
         if save:
             import os
@@ -415,6 +459,34 @@ class PromptFunction:
             file = path.join(current_dir, file)
         with open(file, "r", encoding="utf-8") as f:
             return f.read()
+
+    @staticmethod
+    def _extract_first_json_object(text: str) -> str:
+        start = text.find("{")
+        if start == -1:
+            raise ValueError("No JSON object found in model response.")
+        depth = 0
+        in_string = False
+        escape = False
+        for idx in range(start, len(text)):
+            char = text[idx]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : idx + 1]
+        raise ValueError("No complete JSON object found in model response.")
 
     def set_temperature(self, temperature: float) -> None:
         """Set the sampling temperature for the next execution."""

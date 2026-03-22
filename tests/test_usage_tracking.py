@@ -88,6 +88,23 @@ def test_build_usage_record_sets_anomaly_flag_above_threshold():
     assert record["anomaly_ratio"] > 0.5
 
 
+def test_build_usage_record_skips_anomaly_for_fallback_claude_estimate():
+    response = SimpleNamespace(
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    )
+    record = build_usage_record(
+        response=response,
+        messages=[{"role": "user", "content": "hello"}],
+        reply_text="world",
+        provider="claude",
+        model="claude-haiku-4-5",
+    )
+
+    assert record["source"] == "provider"
+    assert record["anomaly_flag"] is False
+    assert record["anomaly_ratio"] is None
+
+
 def test_cost_only_present_when_provider_returns_it():
     no_cost = build_usage_record(
         response=SimpleNamespace(usage=SimpleNamespace(prompt_tokens=1, completion_tokens=2, total_tokens=3)),

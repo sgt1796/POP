@@ -14,6 +14,7 @@ Example usage::
     print(result)
 """
 
+from ._version import __version__
 from .prompt_function import PromptFunction
 from .embedder import Embedder
 from .context import Context, MessageBlock
@@ -27,6 +28,7 @@ from .api_registry import (
 )
 
 __all__ = [
+    "__version__",
     "PromptFunction",
     "Embedder",
     "Context",

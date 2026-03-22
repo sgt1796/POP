@@ -9,6 +9,7 @@ provider's default model.
 # Map provider class names to their default model identifiers
 DEFAULT_MODEL = {
     "OpenAIClient": "gpt-5-nano",
+    "ClaudeClient": "claude-haiku-4-5",
     "GeminiClient": "gemini-2.5-flash",
     "DeepseekClient": "deepseek-chat",
     "DoubaoClient": "doubao-seed-1-6-flash-250715",

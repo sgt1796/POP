@@ -96,9 +96,11 @@ def _count_tokens(text: str, model: str) -> Tuple[int, str]:
 
         try:
             encoder = tiktoken.encoding_for_model(model)
+            method = "tiktoken:model"
         except Exception:
             encoder = tiktoken.get_encoding("cl100k_base")
-        return len(encoder.encode(clean_text)), "tiktoken"
+            method = "tiktoken:cl100k_base"
+        return len(encoder.encode(clean_text)), method
     except Exception:
         if not clean_text:
             return 0, "utf8_char4"
@@ -267,7 +269,9 @@ def build_usage_record(
 
     anomaly_ratio: Optional[float] = None
     anomaly_flag = False
-    if provider_compare_total is not None and e_total is not None:
+    estimate_method = estimate.get("estimate_method")
+    estimate_is_fallback = estimate_method in {"tiktoken:cl100k_base", "utf8_char4"}
+    if provider_compare_total is not None and e_total is not None and not estimate_is_fallback:
         denominator = max(provider_compare_total, e_total, 1)
         anomaly_ratio = abs(provider_compare_total - e_total) / float(denominator)
         anomaly_flag = anomaly_ratio > anomaly_threshold

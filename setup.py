@@ -3,15 +3,18 @@ from pathlib import Path
 
 this_dir = Path(__file__).parent
 long_description = (this_dir / "README.md").read_text(encoding="utf-8")
+version_ns = {}
+exec((this_dir / "POP" / "_version.py").read_text(encoding="utf-8"), version_ns)
 
 setup(
     # PyPI project name
     name="pop-python",
-    version="1.1.3",  # update as needed
+    version=version_ns["__version__"],
 
     author="Guotai Shen",
     author_email="sgt1796@gmail.com",
     description="Prompt Oriented Programming (POP): reusable, composable prompt functions for LLMs.",
+    license="MIT",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/sgt1796/POP",
@@ -23,7 +26,6 @@ setup(
     package_data={
         "POP": [
             "prompts/*.md",
-            "schemas/*.json",
         ],
     },
 
@@ -48,7 +50,6 @@ setup(
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
 )

@@ -33,6 +33,33 @@ class GeminiClient(LLMClient):
         self.client = OpenAI(api_key=getenv("GEMINI_API_KEY"), base_url=base_url)
         self.model_name = model
 
+    @staticmethod
+    def _normalize_tools(tools: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        """Normalize function tool declarations to the OpenAI-compatible shape."""
+        normalized: List[Dict[str, Any]] = []
+        for tool in tools or []:
+            if not isinstance(tool, dict):
+                continue
+
+            function_decl: Optional[Dict[str, Any]] = None
+            tool_type = tool.get("type")
+            nested_function = tool.get("function")
+
+            if tool_type is None and isinstance(nested_function, dict):
+                function_decl = dict(nested_function)
+            elif tool_type == "function" and isinstance(nested_function, dict):
+                function_decl = dict(nested_function)
+            elif tool_type in (None, "function"):
+                function_decl = dict(tool)
+                function_decl.pop("type", None)
+                function_decl.pop("function", None)
+
+            if not function_decl or not function_decl.get("name"):
+                continue
+
+            normalized.append({"type": "function", "function": function_decl})
+        return normalized
+
     def chat_completion(
         self,
         messages: List[Dict[str, Any]],
@@ -86,12 +113,11 @@ class GeminiClient(LLMClient):
                 request_payload["response_format"] = {"type": "json_schema", "json_schema": fmt}
 
         # Tools support: list of function descriptors, convert to gemini format
-        tools = kwargs.pop("tools", None)
-        for tool in tools:
-            tool.pop("type", None)  # remove 'type' if present to avoid conflicts
-
-        request_payload["tools"] = [{"type": "function", "function": tool} for tool in tools]
-        request_payload["tool_choice"] = kwargs.pop("tool_choice", "auto")
+        tools = self._normalize_tools(kwargs.pop("tools", None))
+        tool_choice = kwargs.pop("tool_choice", None)
+        if tools:
+            request_payload["tools"] = tools
+            request_payload["tool_choice"] = "auto" if tool_choice is None else tool_choice
         # Avoid collisions for core fields
         kwargs.pop("model", None)
         kwargs.pop("messages", None)

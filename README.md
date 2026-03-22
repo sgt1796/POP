@@ -27,7 +27,7 @@ print(pf.execute(object="a rocket"))
 ---
 Reusable, composable prompt functions for LLM workflows.
 
-This 1.1.0 dev update restructures POP into small, focused modules and adds a provider registry inspired by pi-mono's `ai` package.
+Version 1.1.4 adds Claude OpenAI-compat support, true Claude streaming, and improved provider-aware usage tracking on top of the modular provider registry architecture.
 
 PyPI:
 [https://pypi.org/project/pop-python/](https://pypi.org/project/pop-python/)
@@ -74,11 +74,12 @@ POP is designed to be simple, extensible, and production-friendly.
 
 # 2. Update Note
 
-**1.1.0-dev (February 5, 2026)**
+**1.1.4 (March 22, 2026)**
 
-* **Breaking import path**: use `POP` (uppercase) for imports. Example: `from POP import PromptFunction`.
-* **Provider registry**: clients live under `POP/providers/` and are instantiated via `POP.api_registry`.
-* **LLMClient base class**: now in `POP.providers.llm_client` (kept as an abstract base class).
+* **Claude provider**: added `client="claude"` via Anthropic's OpenAI-compatible endpoint with `ANTHROPIC_API_KEY`.
+* **Streaming update**: `POP.stream` now supports true Claude chunk streaming while preserving POP's event contract.
+* **Usage tracking**: provider-aware request normalization now feeds usage estimation for better Claude compatibility.
+* **Schema/tool compatibility**: POP warns and degrades cleanly for Claude compatibility gaps such as ignored `response_format` and tool `strict`.
 
 ---
 
@@ -99,7 +100,7 @@ This mirrors the structure in the pi-mono `ai` package for clarity and maintaina
 
 ### 3.2. Provider registry + per-provider clients
 
-Each provider has its own adaptor (OpenAI, Gemini, DeepSeek, Doubao, Local, Ollama). The registry gives you:
+Each provider has its own adaptor (OpenAI, Claude, Gemini, DeepSeek, Doubao, Local, Ollama). The registry gives you:
 
 * `list_providers()`
 * `list_default_model()`
@@ -114,7 +115,7 @@ Each provider has its own adaptor (OpenAI, Gemini, DeepSeek, Doubao, Local, Olla
   Use `<<<placeholder>>>` syntax to inject dynamic content.
 
 * **Multi-LLM Backend**
-  Choose between OpenAI, Gemini, DeepSeek, Doubao, Local, or Ollama.
+  Choose between OpenAI, Claude, Gemini, DeepSeek, Doubao, Local, or Ollama.
 
 * **Tool Calling**
   Pass a tool schema list to `execute()` and receive tool-call arguments.
@@ -160,6 +161,7 @@ Create a `.env` file in your project root:
 
 ```ini
 OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
 GEMINI_API_KEY=your_gcp_gemini_key
 DEEPSEEK_API_KEY=your_deepseek_key
 DOUBAO_API_KEY=your_volcengine_key
@@ -290,6 +292,7 @@ print(list_default_model())
 print(list_models())
 
 client = get_client("openai")
+claude_client = get_client("claude")
 ```
 
 Non-default model example:
@@ -347,6 +350,19 @@ pf = PromptFunction(
 result = pf.execute(input="Remind me to walk at 9am.", tools=tools)
 print(result)
 ```
+
+If you do not want tool calling for a request, either omit `tools` entirely or pass `tools=[]`.
+POP treats both as plain text generation and omits tool-calling fields from the provider request.
+This is especially important for Gemini's OpenAI-compatible endpoint, where tool-free requests should not send `tools` or `tool_choice`.
+
+When using `client="claude"`, POP talks to Anthropic through the OpenAI Python SDK compatibility endpoint.
+POP warns and degrades for documented compatibility gaps instead of pretending OpenAI-only features are enforced:
+
+* `fmt` / `response_format` is omitted because Anthropic ignores it on the compatibility layer
+* strict tool schemas are removed because Anthropic ignores `strict`
+* system and developer prompts are hoisted into one system prompt before the request is sent
+
+Claude defaults to `claude-haiku-4-5`. You can override it per call, for example `model="claude-sonnet-4-6"`.
 
 ---
 

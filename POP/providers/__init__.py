@@ -12,6 +12,7 @@ and then registering it here.
 """
 
 from .openai_client import OpenAIClient
+from .claude_client import ClaudeClient
 from .gemini_client import GeminiClient
 from .deepseek_client import DeepseekClient
 from .local_client import LocalPyTorchClient
@@ -23,6 +24,7 @@ from .ollama_client import OllamaClient
 # should be inserted here.
 DEFAULT_CLIENTS = {
     "openai": OpenAIClient,
+    "claude": ClaudeClient,
     "gemini": GeminiClient,
     "deepseek": DeepseekClient,
     "local": LocalPyTorchClient,
