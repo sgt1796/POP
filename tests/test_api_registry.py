@@ -42,4 +42,4 @@ def test_get_model_uses_default_mapping():
 
 
 def test_package_exposes_version():
-    assert __version__ == "1.1.4"
+    assert __version__ == "1.1.5"

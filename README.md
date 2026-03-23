@@ -27,7 +27,7 @@ print(pf.execute(object="a rocket"))
 ---
 Reusable, composable prompt functions for LLM workflows.
 
-Version 1.1.4 adds Claude OpenAI-compat support, true Claude streaming, and improved provider-aware usage tracking on top of the modular provider registry architecture.
+Version 1.1.5 fixes the Gemini tool-normalization regression from 1.1.4 and converts empty Gemini tool-enabled stream replies into explicit errors instead of silent failures.
 
 PyPI:
 [https://pypi.org/project/pop-python/](https://pypi.org/project/pop-python/)
@@ -74,12 +74,11 @@ POP is designed to be simple, extensible, and production-friendly.
 
 # 2. Update Note
 
-**1.1.4 (March 22, 2026)**
+**1.1.5 (March 23, 2026)**
 
-* **Claude provider**: added `client="claude"` via Anthropic's OpenAI-compatible endpoint with `ANTHROPIC_API_KEY`.
-* **Streaming update**: `POP.stream` now supports true Claude chunk streaming while preserving POP's event contract.
-* **Usage tracking**: provider-aware request normalization now feeds usage estimation for better Claude compatibility.
-* **Schema/tool compatibility**: POP warns and degrades cleanly for Claude compatibility gaps such as ignored `response_format` and tool `strict`.
+* **Gemini tool compatibility**: restores support for POP's flat legacy tool schema, including `type: "custom"` agent tools.
+* **Gemini failure visibility**: empty Gemini replies on tool-enabled requests now surface as explicit stream errors instead of silent `done` events.
+* **Request diagnostics**: Gemini requests now warn on partially dropped tools and fail fast when no supplied tool can be normalized.
 
 ---
 
