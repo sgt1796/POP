@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from POP.prompt_function import PromptFunction
 from POP.providers.gemini_client import GeminiClient
 
@@ -50,11 +52,12 @@ def test_gemini_chat_completion_omits_tool_config_without_declarations(monkeypat
     monkeypatch.setattr("POP.providers.gemini_client.OpenAI", _FakeOpenAI)
     client = GeminiClient(model="gemini-2.5-pro")
 
-    client.chat_completion(
-        messages=[{"role": "user", "content": "Say hello."}],
-        tools=[],
-        tool_choice="required",
-    )
+    with pytest.warns(UserWarning, match="tool_choice"):
+        client.chat_completion(
+            messages=[{"role": "user", "content": "Say hello."}],
+            tools=[],
+            tool_choice="required",
+        )
 
     payload = _last_payload()
     assert "tools" not in payload
@@ -84,3 +87,43 @@ def test_gemini_chat_completion_preserves_real_tools(monkeypatch):
     assert payload["tool_choice"] == "auto"
     assert tool["type"] == "function"
     assert tool["function"]["name"] == "ping"
+
+
+def test_gemini_chat_completion_normalizes_flat_custom_tools(monkeypatch):
+    monkeypatch.setattr("POP.providers.gemini_client.OpenAI", _FakeOpenAI)
+    client = GeminiClient(model="gemini-2.5-pro")
+    tool = {
+        "type": "custom",
+        "name": "ping",
+        "description": "Return pong.",
+        "parameters": {"type": "object", "properties": {}},
+    }
+
+    client.chat_completion(
+        messages=[{"role": "user", "content": "Call ping."}],
+        tools=[tool],
+    )
+
+    payload = _last_payload()
+    assert payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": "ping",
+                "description": "Return pong.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    assert payload["tool_choice"] == "auto"
+
+
+def test_gemini_chat_completion_raises_when_all_tools_are_invalid(monkeypatch):
+    monkeypatch.setattr("POP.providers.gemini_client.OpenAI", _FakeOpenAI)
+    client = GeminiClient(model="gemini-2.5-pro")
+
+    with pytest.raises(RuntimeError, match="could not normalize any supplied tools"):
+        client.chat_completion(
+            messages=[{"role": "user", "content": "Call a tool."}],
+            tools=[{"type": "custom", "description": "Missing name"}],
+        )

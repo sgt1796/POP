@@ -241,6 +241,24 @@ def _extract_text_and_tool_calls(response: Any) -> Tuple[str, List[Dict[str, Any
     return text, tool_calls
 
 
+def _detect_empty_reply_error(
+    provider: str,
+    text: str,
+    tool_calls: List[Dict[str, Any]],
+    requested_tools: Any,
+) -> Optional[str]:
+    if (provider or "").lower() != "gemini":
+        return None
+    if not requested_tools:
+        return None
+    if text.strip() or tool_calls:
+        return None
+    return (
+        "Gemini returned an empty response without text or tool calls for a tool-enabled request. "
+        "POP is treating this as an error so Gemini compatibility issues do not fail silently."
+    )
+
+
 def _choice_delta(choice: Any) -> Any:
     if isinstance(choice, dict):
         return choice.get("delta")
@@ -519,6 +537,24 @@ class MessageEventStream:
         final["content"] = content_items
         final["stopReason"] = "stop"
         usage_response = {"usage": provider_usage} if provider_usage is not None else None
+        empty_reply_error = _detect_empty_reply_error(
+            prepared_call["provider"],
+            text,
+            tool_calls,
+            prepared_call.get("tools"),
+        )
+        if empty_reply_error is not None:
+            final["stopReason"] = "error"
+            final["errorMessage"] = empty_reply_error
+            final["usage"] = self._build_usage_record(
+                response=usage_response,
+                reply_text=self._serialize_reply_for_usage(text, tool_calls),
+                request_start=request_start,
+                prepared_call=prepared_call,
+            )
+            self._final_message = final
+            yield {"type": "error", "error": final}
+            return
         final["usage"] = self._build_usage_record(
             response=usage_response,
             reply_text=self._serialize_reply_for_usage(text, tool_calls),
@@ -568,6 +604,26 @@ class MessageEventStream:
         if text:
             content_items.append({"type": "text", "text": text})
         content_items.extend(tool_calls)
+        empty_reply_error = _detect_empty_reply_error(
+            prepared_call["provider"],
+            text,
+            tool_calls,
+            prepared_call.get("tools"),
+        )
+        if empty_reply_error is not None:
+            error_msg = dict(partial)
+            error_msg["content"] = content_items
+            error_msg["stopReason"] = "error"
+            error_msg["errorMessage"] = empty_reply_error
+            error_msg["usage"] = self._build_usage_record(
+                response=response,
+                reply_text=self._serialize_reply_for_usage(text, tool_calls),
+                request_start=request_start,
+                prepared_call=prepared_call,
+            )
+            self._final_message = error_msg
+            yield {"type": "error", "error": error_msg}
+            return
         final["content"] = content_items
         final["stopReason"] = "stop"
         final["usage"] = self._build_usage_record(

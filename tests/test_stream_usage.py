@@ -153,6 +153,50 @@ def test_stream_done_event_includes_estimated_usage_when_missing(monkeypatch):
     assert usage["estimate_total_tokens"] == usage["total_tokens"]
 
 
+def test_gemini_empty_tool_response_emits_error_instead_of_done(monkeypatch):
+    prepared = _prepared_call(
+        provider="gemini",
+        client=_FakeClient(
+            _fake_response(
+                "",
+                usage=SimpleNamespace(prompt_tokens=10, completion_tokens=0, total_tokens=10),
+            )
+        ),
+        model_id="gemini-2.5-pro",
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "ping",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(stream_mod, "_prepare_call", lambda model, context, options: prepared)
+
+    async def run_stream():
+        event_stream = await stream_mod.stream(
+            {"provider": "gemini", "id": "gemini-2.5-pro"},
+            {"messages": [{"role": "user", "content": "Call ping"}]},
+            {},
+        )
+        events = []
+        async for event in event_stream:
+            events.append(event)
+        return events
+
+    events = asyncio.run(run_stream())
+    assert not any(event["type"] == "done" for event in events)
+    error_event = next(event for event in events if event["type"] == "error")
+    usage = error_event["error"]["usage"]
+
+    assert "empty response" in error_event["error"]["errorMessage"]
+    assert usage["source"] == "provider"
+    assert usage["output_tokens"] == 0
+    assert usage["total_tokens"] == 10
+
+
 def test_claude_stream_emits_incremental_text_and_provider_usage(monkeypatch):
     stream_obj = _FakeSyncStream(
         [
