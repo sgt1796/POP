@@ -271,7 +271,8 @@ def build_usage_record(
     anomaly_flag = False
     estimate_method = estimate.get("estimate_method")
     estimate_is_fallback = estimate_method in {"tiktoken:cl100k_base", "utf8_char4"}
-    if provider_compare_total is not None and e_total is not None and not estimate_is_fallback:
+    skip_fallback_anomaly = estimate_is_fallback and str(provider).lower() != "openai"
+    if provider_compare_total is not None and e_total is not None and not skip_fallback_anomaly:
         denominator = max(provider_compare_total, e_total, 1)
         anomaly_ratio = abs(provider_compare_total - e_total) / float(denominator)
         anomaly_flag = anomaly_ratio > anomaly_threshold
