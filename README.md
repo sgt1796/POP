@@ -402,6 +402,7 @@ Supported modes:
 * OpenAI embeddings
 * Gemini embeddings (via OpenAI-compatible Gemini endpoint)
 * JinaAI embeddings
+* Ollama embeddings (via Ollama's OpenAI-compatible endpoint)
 * Local HuggingFace model embeddings (cpu/gpu)
 
 Large inputs are chunked automatically when needed.

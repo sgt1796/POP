@@ -26,6 +26,8 @@ from typing import List
 # Maximum number of tokens permitted by the Jina segmenter
 MAX_TOKENS = 8194
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+OLLAMA_OPENAI_BASE_URL = "http://localhost:11434/v1/"
+
 
 class Embedder:
     """
@@ -39,7 +41,7 @@ class Embedder:
         model for the selected API will be chosen.
     use_api:
         Which API to use for embedding.  Supported values are
-        ``'jina'``, ``'openai'``, ``'gemini'`` and ``None`` (for local embedding).
+        ``'jina'``, ``'openai'``, ``'gemini'``, ``'ollama'``, and ``None`` (for local embedding).
     to_cuda:
         If ``True``, use GPU; otherwise use CPU for local embeddings.
     attn_implementation:
@@ -55,7 +57,7 @@ class Embedder:
 
         # API‑based embedding initialisation
         if self.use_api is not None:
-            supported_apis = ['', 'jina', 'openai', 'gemini']
+            supported_apis = ['', 'jina', 'openai', 'gemini', 'ollama']
             if self.use_api not in supported_apis:
                 raise ValueError(f"API type '{self.use_api}' not supported. Supported APIs: {supported_apis}")
 
@@ -75,6 +77,13 @@ class Embedder:
                     api_key=getenv("GEMINI_API_KEY"),
                     base_url=GEMINI_OPENAI_BASE_URL,
                 )
+            elif self.use_api == 'ollama':
+                # Initialise Ollama client through its OpenAI-compatible endpoint.
+                self.client = openai.Client(
+                    api_key='ollama',
+                    base_url=OLLAMA_OPENAI_BASE_URL,
+                )
+
         else:
             # Load PyTorch model for local embedding generation
             if not model_name:
@@ -147,6 +156,11 @@ class Embedder:
                 if not self.model_name:
                     self.model_name = "gemini-embedding-001"
                 return self._get_gemini_embedding(texts)
+            elif self.use_api == 'ollama':
+                if not self.model_name:
+                    # raise error since ollama has no default
+                    raise ValueError("Model name must be provided when using Ollama API.")
+                return self._get_ollama_embedding(texts)
             else:
                 raise ValueError(f"API type '{self.use_api}' is not supported.")
         else:
@@ -222,6 +236,22 @@ class Embedder:
         embeddings = [item.embedding for item in response.data]
         return np.array(embeddings, dtype='f')
 
+    @on_exception(expo, HTTPRequests.exceptions.RequestException, max_time=30)
+    def _get_ollama_embedding(self, texts: List[str]) -> np.ndarray:
+        """Fetch embeddings from the Ollama API via OpenAI-compatible endpoint."""
+        batch_size = 2048
+        if len(texts) > batch_size:
+            all_embeddings = []
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                batch_embeddings = self._get_ollama_embedding(batch_texts)
+                all_embeddings.append(batch_embeddings)
+            return np.vstack(all_embeddings)
+        texts = [text.replace("\n", " ") for text in texts]
+        response = self.client.embeddings.create(input=texts, model=self.model_name)
+        embeddings = [item.embedding for item in response.data]
+        return np.array(embeddings, dtype='f')
+
     def _get_torch_embedding(self, texts: List[str]) -> np.ndarray:
         """Generate embeddings using a local PyTorch model."""
         try:
@@ -256,20 +286,3 @@ class Embedder:
             embeddings = F.normalize(reps, p=2, dim=1).detach().cpu().numpy()
             return embeddings
         return _encode(self, texts)
-
-    @on_exception(expo, HTTPRequests.exceptions.RequestException, max_time=30)
-    def _Jina_segmenter(self, text: str, max_token: int) -> List[str]:
-        """Segments text into chunks using Jina API.  (free but needs API key)"""
-        url = 'https://segment.jina.ai/'
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f"Bearer {getenv('JINAAI_API_KEY')}"
-        }
-        data = {
-            "content": text,
-            "return_tokens": True,
-            "return_chunks": True,
-            "max_chunk_length": max_token,
-        }
-        response = HTTPRequests.post(url, headers=headers, json=data)
-        return response.json().get('chunks', [])

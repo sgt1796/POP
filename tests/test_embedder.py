@@ -92,6 +92,41 @@ def test_gemini_default_model_and_client_config(monkeypatch):
     assert seen["model"] == "gemini-embedding-001"
 
 
+def test_ollama_embedding_stub_and_client_config(monkeypatch):
+    seen = {"api_key": None, "base_url": None, "model": None}
+
+    class DummyEmbeddings:
+        def create(self, input, model):
+            seen["model"] = model
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2, 0.3]) for _ in input])
+
+    class DummyClient:
+        def __init__(self, api_key=None, base_url=None):
+            seen["api_key"] = api_key
+            seen["base_url"] = base_url
+            self.embeddings = DummyEmbeddings()
+
+    monkeypatch.setattr(emb_mod, "openai", SimpleNamespace(Client=DummyClient))
+    embedder = Embedder(use_api="ollama", model_name="bge-m3:latest")
+    vecs = embedder.get_embedding(["hello world"])
+    assert isinstance(vecs, np.ndarray)
+    assert vecs.shape == (1, 3)
+    assert seen["api_key"] == "ollama"
+    assert seen["base_url"] == emb_mod.OLLAMA_OPENAI_BASE_URL
+    assert seen["model"] == "bge-m3:latest"
+
+
+def test_ollama_requires_model_name(monkeypatch):
+    class DummyClient:
+        def __init__(self, api_key=None, base_url=None):
+            self.embeddings = SimpleNamespace()
+
+    monkeypatch.setattr(emb_mod, "openai", SimpleNamespace(Client=DummyClient))
+    embedder = Embedder(use_api="ollama")
+    with pytest.raises(ValueError, match="Model name must be provided"):
+        embedder.get_embedding(["hello"])
+
+
 def test_get_embedding_requires_list(monkeypatch):
     class DummyEmbeddings:
         def create(self, input, model):
