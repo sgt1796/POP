@@ -63,7 +63,6 @@ Instead of scattering prompt strings across your codebase, POP lets you:
 * encapsulate prompts as objects
 * pass parameters cleanly via placeholders
 * select a backend LLM client dynamically
-* improve prompts using meta-prompting
 * generate OpenAI-compatible function schemas
 * use unified embedding tools
 * work with multiple LLM providers through a centralized registry
@@ -121,9 +120,6 @@ Each provider has its own adaptor (OpenAI, Claude, Gemini, DeepSeek, Doubao, Loc
 
 * **Multimodal (Text + Image)**
   Pass `images=[...]` (URLs or base64) when the provider supports it.
-
-* **Prompt Improvement**
-  Improve or rewrite prompts using Fabric-style meta-prompts.
 
 * **Function Schema Generation**
   Convert natural language descriptions into OpenAI-function schemas.
@@ -236,20 +232,7 @@ result = pf.execute(
 
 ---
 
-## 7.4. Improving Prompts
-
-You can ask POP to rewrite or enhance your system prompt:
-
-```python
-better = pf.improve_prompt()
-print(better)
-```
-
-This uses a Fabric-inspired meta-prompt bundled in the `POP/prompts/` directory.
-
----
-
-## 7.5. Token Usage Tracking
+## 7.4. Token Usage Tracking
 
 POP tracks usage per call at the framework level.
 

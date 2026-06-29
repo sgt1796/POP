@@ -3,12 +3,11 @@
 The :class:`PromptFunction` encapsulates a system prompt, a base
 prompt template and the logic to execute that prompt against any
 registered LLM provider.  It provides features such as dynamic
-placeholder substitution, prompt improvement via a meta prompt,
-function schema generation and prompt saving.
+placeholder substitution, function schema generation and prompt saving.
 
 This implementation mirrors the original POP ``PromptFunction`` but
 delegates provider instantiation to the central registry defined in
-``POP.api_registry`` and stores meta prompts in ``POP/prompts/``.
+``POP.api_registry``.
 """
 
 from __future__ import annotations
@@ -302,65 +301,6 @@ class PromptFunction:
         if placeholders:
             print("Placeholders found:", placeholders)
         return placeholders
-
-    def improve_prompt(
-        self,
-        replace: bool = False,
-        use_prompt: str = "fabric",
-        instruction: Optional[str] = None,
-        user_instruction: Optional[str] = None,
-    ) -> str:
-        """Improve the prompt using a meta prompt.
-
-        Parameters
-        ----------
-        replace : bool, optional
-            If True, replace the existing system prompt with the improved
-            version (default False).
-        use_prompt : str, optional
-            Identifier for which meta prompt to use (currently only
-            ``"fabric"`` is supported).
-        instruction : str, optional
-            Override the meta prompt instructions by providing a full
-            meta prompt directly.
-        user_instruction : str, optional
-            Additional instructions from the user.
-        Returns
-        -------
-        str
-            The improved prompt.
-        """
-        if use_prompt == "fabric":
-            # Determine path to the meta prompt file relative to this file
-            current_dir = path.dirname(path.abspath(__file__))
-            file_path = path.join(current_dir, "prompts", "fabric-improve_prompt.md")
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    instruction = f.read()
-            except FileNotFoundError:
-                raise FileNotFoundError(f"File not found: {file_path}")
-        # Compose meta instruction that preserves placeholders
-        meta_instruction = (
-            f"\nAdditional instruction:\n{user_instruction}\n"
-            "Ensure that original placeholders (<<<placeholder>>>) are preserved in the improved prompt and placed in a clear position."
-            "do not use any '<<<'  or '>>>' in the improved prompt other than the original placeholder, and you have to show the placehold in the exact same order and amount of times as in the original prompt."
-        )
-        # Execute the meta prompt via the model
-        improved_prompt = self.execute(
-            ADD_BEFORE=meta_instruction,
-            model="gpt-5",
-            sys=(
-                "You are asked to improve the above 'Base system prompt' using the following instruction:\n"
-                + (instruction or "")
-            ),
-        )
-        if use_prompt == "fabric":
-            # Extract only the part after the '# OUTPUT' marker
-            if "# OUTPUT" in improved_prompt:
-                improved_prompt = improved_prompt.split("# OUTPUT", 1)[-1].lstrip("\n")
-        if replace:
-            self.sys_prompt = improved_prompt
-        return improved_prompt
 
     def generate_schema(
         self,

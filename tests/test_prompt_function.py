@@ -104,15 +104,6 @@ def test_execute_returns_tool_call_arguments(fake_response):
     assert result == tool_args
 
 
-def test_improve_prompt_replaces_and_strips_output(monkeypatch, fake_response):
-    client = DummyClient(fake_response("unused"))
-    pf = PromptFunction(sys_prompt="Base prompt", prompt="", client=client)
-    monkeypatch.setattr(pf, "execute", lambda *args, **kwargs: "# OUTPUT\nImproved prompt")
-    improved = pf.improve_prompt(replace=True)
-    assert improved == "Improved prompt"
-    assert pf.sys_prompt == "Improved prompt"
-
-
 def test_load_prompt_resolves_relative_path():
     content = PromptFunction.load_prompt("prompts/json_formatter_prompt.md")
     assert "Generate a JSON Schema" in content
